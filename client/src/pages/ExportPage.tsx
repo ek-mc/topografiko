@@ -95,10 +95,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     const base = includeBlock ? `${parcel.kaek}-ot` : parcel.kaek;
     if (format === "geojson") downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
     if (format === "kml") downloadText(`${base}.kml`, toKML(base, parcels), "application/vnd.google-earth.kml+xml;charset=utf-8");
-    if (format === "dxf") downloadText(`${base}.dxf`, toDXF(parcels, { kaek: parcel.kaek, ot: teeData?.otNumber, municipality: teeData?.municipality, region: "(#Περιφέρεια)", includeTitleBlock: mode === "full" }), "application/dxf;charset=utf-8");
+    if (format === "dxf") downloadText(`${base}.dxf`, toDXF(parcels, { kaek: parcel.kaek, ot: teeData?.otNumber, municipality: teeData?.municipality, region: "(#Perifereia)", includeTitleBlock: mode === "full", coords }), "application/dxf;charset=utf-8");
   };
 
-  const coords = useMemo(() => parcel ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({ i: i + 1, x: p.x, y: p.y })) : [], [parcel]);
+  const coords = useMemo(() => parcel ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({ i: i + 1, x: String(p.x), y: String(p.y) })) : [], [parcel]);
 
   return (
     <main className="min-h-screen bg-white px-4 py-8 text-neutral-900">
@@ -215,8 +215,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           {coords.slice(0, 8).map((row) => (
                             <>
                               <div key={`i-${row.i}`}>{row.i}</div>
-                              <div key={`x-${row.i}`}>{row.x.toFixed(2)}</div>
-                              <div key={`y-${row.i}`}>{row.y.toFixed(2)}</div>
+                              <div key={`x-${row.i}`}>{row.x}</div>
+                              <div key={`y-${row.i}`}>{row.y}</div>
                             </>
                           ))}
                         </div>

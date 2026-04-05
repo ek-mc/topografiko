@@ -232,11 +232,18 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 
 export function toDXF(
   parcels: { kaek: string; rings: Point[][] }[],
-  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean },
+  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[] },
 ) {
   const writer = new DxfWriter();
+  const projectedParcels = parcels.map((parcel) => ({
+    ...parcel,
+    rings: parcel.rings.map((ring) => ring.map((p) => {
+      const [x, y] = transformToGGRS87(p.x, p.y);
+      return { x, y };
+    })),
+  }));
 
-  parcels.forEach((parcel) => {
+  projectedParcels.forEach((parcel) => {
     const pts = stripClosingPoint(parcel.rings[0]);
     if (pts.length < 2) return;
     pts.forEach((start, index) => {
@@ -246,14 +253,14 @@ export function toDXF(
   });
 
   if (meta?.includeTitleBlock) {
-    const points = parcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
+    const points = projectedParcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
     if (points.length) {
       const bounds = boundsFromPoints(points);
       const width = Math.max(1, bounds.maxX - bounds.minX);
       const height = Math.max(1, bounds.maxY - bounds.minY);
-      const boxWidth = width * 0.75;
-      const boxHeight = height * 0.55;
-      const x0 = bounds.maxX + width * 0.12;
+      const boxWidth = Math.max(width * 0.9, 140);
+      const boxHeight = Math.max(height * 1.4, 160);
+      const x0 = bounds.maxX + width * 0.2;
       const y0 = bounds.minY;
       const x1 = x0 + boxWidth;
       const y1 = y0 + boxHeight;
@@ -262,16 +269,22 @@ export function toDXF(
       writer.addLine(point3d(x1, y1, 0), point3d(x0, y1, 0));
       writer.addLine(point3d(x0, y1, 0), point3d(x0, y0, 0));
       const lines = [
-        ["Μελετητής", "grey placeholder"],
-        ["Έργο", "Τοπογραφικό Διάγραμμα"],
-        ["Θέση", `Ο.Τ. ${meta.ot || "***"}, Δήμου ${meta.municipality || "(#Καλλικρατικός Δήμος)"}, ${meta.region || "(#Περιφέρεια)"}`],
-        ["KAEK", meta.kaek || "—"],
+        ["Engineer", "grey placeholder"],
+        ["Project", "Topografiko Diagramma"],
+        ["Location", `O.T. ${meta.ot || "***"}, Dimou ${meta.municipality || "(#Municipality)"}, ${meta.region || "(#Region)"}`],
+        ["KAEK", meta.kaek || "-"],
       ];
-      const step = boxHeight / 6;
+      const step = boxHeight / 10;
       lines.forEach(([label, value], i) => {
         const y = y1 - step * (i + 1);
-        writer.addText(point3d(x0 + boxWidth * 0.04, y, 0), step * 0.25, label);
-        writer.addText(point3d(x0 + boxWidth * 0.32, y, 0), step * 0.25, value);
+        writer.addText(point3d(x0 + boxWidth * 0.04, y, 0), step * 0.22, label);
+        writer.addText(point3d(x0 + boxWidth * 0.32, y, 0), step * 0.22, value);
+      });
+      (meta.coords || []).slice(0, 20).forEach((row, idx) => {
+        const y = y1 - step * (idx + 5);
+        writer.addText(point3d(x0 + boxWidth * 0.04, y, 0), step * 0.18, `${row.i}`);
+        writer.addText(point3d(x0 + boxWidth * 0.12, y, 0), step * 0.18, row.x);
+        writer.addText(point3d(x0 + boxWidth * 0.52, y, 0), step * 0.18, row.y);
       });
     }
   }
