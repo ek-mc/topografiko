@@ -613,7 +613,7 @@ export default function Home({ initialKaek }: HomeProps) {
 
               <svg viewBox="0 0 320 320" className="w-full max-h-[520px]">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
-                <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
+                <path d={path} fill="rgba(59,130,246,0.06)" stroke="#60a5fa" strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
                   const project = createSvgProjector(primaryRing);
                   const p = project(point);
@@ -622,8 +622,7 @@ export default function Home({ initialKaek }: HomeProps) {
                   return (
                     <g key={index}>
                       <circle cx={p.x} cy={p.y} r="3.6" fill="#111827" />
-                      <rect x={p.x + dx - 4} y={p.y + dy - 14} width="18" height="18" rx="4" fill="white" stroke="#d4d4d8" />
-                      <text x={p.x + dx + 5} y={p.y + dy - 2} fontSize="11" textAnchor="middle" fill="#111827">{greekLabel(index)}</text>
+                      <text x={p.x + dx + 5} y={p.y + dy - 2} fontSize="11" textAnchor="middle" fill="#334155">{greekLabel(index)}</text>
                     </g>
                   );
                 })}
@@ -796,8 +795,8 @@ export default function Home({ initialKaek }: HomeProps) {
                     })}
                     <path
                       d={pathFromRingWithBounds(primaryRing, blockBounds)}
-                      fill="rgba(17,24,39,0.08)"
-                      stroke="#111827"
+                      fill="rgba(59,130,246,0.08)"
+                      stroke="#60a5fa"
                       strokeWidth="2.2"
                       className="cursor-pointer"
                       onClick={() => {
@@ -807,7 +806,7 @@ export default function Home({ initialKaek }: HomeProps) {
                     />
                     {(() => {
                       const c = projectPoint(centroid(primaryRing), blockBounds);
-                      return <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#111827">{parcel.kaek}</text>;
+                      return <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#1e3a8a">{parcel.kaek}</text>;
                     })()}
                   </svg>
                 </div>
