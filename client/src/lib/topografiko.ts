@@ -125,18 +125,15 @@ export function transformFromGGRS87(x: number, y: number): [number, number] {
 
 export async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
   if (!rings?.[0]?.length) return null;
-  const points = rings[0];
-  const lons = points.map((p) => p.x);
-  const lats = points.map((p) => p.y);
-  const [xmin, ymin] = transformToWebMercator(Math.min(...lons), Math.min(...lats));
-  const [xmax, ymax] = transformToWebMercator(Math.max(...lons), Math.max(...lats));
-  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 102100 } });
+  const center = centroidOfRing(rings[0]);
+  const [x, y] = transformToWebMercator(center.x, center.y);
+  const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 102100 } });
   const params = new URLSearchParams({
     f: "json",
     returnGeometry: "true",
     spatialRel: "esriSpatialRelIntersects",
     geometry,
-    geometryType: "esriGeometryEnvelope",
+    geometryType: "esriGeometryPoint",
     inSR: "102100",
     outFields: "OBJECTID,FEK,OT_NUM,APOF_EIDOS,KALL_DHM_NAME",
     outSR: "102100",
