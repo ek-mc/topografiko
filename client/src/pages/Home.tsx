@@ -563,11 +563,11 @@ export default function Home({ initialKaek }: HomeProps) {
                 <h3 className="mb-2 text-sm font-semibold text-neutral-700">Shareable Link</h3>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded-lg bg-white px-3 py-2 text-sm text-neutral-600">
-                    {`${window.location.origin}/o/${parcel.kaek}`}
+                    {`${window.location.origin}/topografiko/#/o/${parcel.kaek}`}
                   </code>
                   <button
                     type="button"
-                    onClick={() => copyValue('share-link', `${window.location.origin}/o/${parcel.kaek}`)}
+                    onClick={() => copyValue('share-link', `${window.location.origin}/topografiko/#/o/${parcel.kaek}`)}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-100"
                     title="Copy link"
                   >
@@ -594,7 +594,7 @@ export default function Home({ initialKaek }: HomeProps) {
                           <tr key={neighbor.kaek} className="border-t border-neutral-200">
                             <td className="px-3 py-2">
                               <a
-                                href={`/o/${neighbor.kaek}`}
+                                href={`#/o/${neighbor.kaek}`}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   setQuery(neighbor.kaek);
