@@ -1,5 +1,6 @@
 import { Search, Download, Copy, Check } from "lucide-react";
 import { useMemo, useState } from "react";
+import proj4 from "proj4";
 import otaOfficeMap from "@shared/ota-office-map.json";
 import mainUseMap from "@shared/main-use-map.json";
 
@@ -14,6 +15,13 @@ type ParcelData = {
   link: string;
   rings: Point[][];
   raw: Record<string, unknown>;
+};
+
+type TEEData = {
+  otNumber: string;
+  fek: string;
+  apofEidos: string;
+  municipality: string;
 };
 
 function formatNumber(value: number | null, digits = 2) {
@@ -155,11 +163,81 @@ async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
   };
 }
 
+// TEE coordinate transformation: WGS84 (4326) to GGRS87 (2100)
+function transformToGGRS87(lon: number, lat: number): [number, number] {
+  // Define projections
+  const wgs84 = 'EPSG:4326';
+  const ggrs87 = '+proj=tmerc +lat_0=0 +lon_0=24 +k=0.9996 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=-199.87,74.79,246.62,0,0,0,0 +units=m +no_defs';
+  
+  try {
+    const result = proj4(wgs84, ggrs87, [lon, lat]);
+    return [result[0], result[1]];
+  } catch {
+    // Fallback: approximate transformation
+    return [lon * 111000 + 500000, lat * 111000];
+  }
+}
+
+async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
+  if (!rings?.[0]?.length) return null;
+  
+  // Get bounds from polygon
+  const points = rings[0];
+  const lons = points.map((p) => p.x);
+  const lats = points.map((p) => p.y);
+  const minLon = Math.min(...lons);
+  const maxLon = Math.max(...lons);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  
+  // Transform to GGRS87
+  const [xmin, ymin] = transformToGGRS87(minLon, minLat);
+  const [xmax, ymax] = transformToGGRS87(maxLon, maxLat);
+  
+  const geometry = JSON.stringify({
+    xmin, ymin, xmax, ymax,
+    spatialReference: { wkid: 2100 }
+  });
+  
+  const params = new URLSearchParams({
+    f: 'json',
+    returnGeometry: 'false',
+    spatialRel: 'esriSpatialRelIntersects',
+    geometry,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '2100',
+    outFields: 'OBJECTID,FEK,OT_NUM,APOF_EIDOS,KALL_DHM_NAME',
+    outSR: '2100',
+    layer: JSON.stringify({ source: { type: 'mapLayer', mapLayerId: 6 } }),
+  });
+  
+  const url = `https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/dynamicLayer/query?${params.toString()}`;
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    const feature = data?.features?.[0];
+    if (!feature) return null;
+    
+    const attrs = feature.attributes;
+    return {
+      otNumber: attrs.OT_NUM || '',
+      fek: attrs.FEK || '',
+      apofEidos: attrs.APOF_EIDOS || '',
+      municipality: attrs.KALL_DHM_NAME || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [parcel, setParcel] = useState<ParcelData | null>(null);
+  const [teeData, setTeeData] = useState<TEEData | null>(null);
   const [copiedKey, setCopiedKey] = useState("");
 
   const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
@@ -193,6 +271,16 @@ export default function Home() {
       rows.push(["Περιγραφή", parcel.description || "—"]);
     }
     
+    // TEE data (Ο.Τ.)
+    if (teeData) {
+      rows.push(
+        ["Οικοδομικό Τετράγωνο (Ο.Τ.)", teeData.otNumber || "—"],
+        ["ΦΕΚ", teeData.fek || "—"],
+        ["Τύπος Έγκρισης", teeData.apofEidos || "—"],
+        ["Καλλικρατικός Δήμος", teeData.municipality || "—"],
+      );
+    }
+    
     rows.push(
       ["ΟΤΑ / link", parcel.link || "—"],
       ["Αριθμός Καθέτων", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
@@ -201,7 +289,7 @@ export default function Home() {
     );
     
     return rows;
-  }, [parcel]);
+  }, [parcel, teeData]);
 
 
 
@@ -226,6 +314,7 @@ export default function Home() {
     setLoading(true);
     setMessage("Searching…");
     setParcel(null);
+    setTeeData(null);
 
     try {
       const result = await fetchParcelByKaek(value);
@@ -235,6 +324,10 @@ export default function Home() {
       }
       setParcel(result);
       setMessage("");
+      
+      // Fetch TEE data for Ο.Τ.
+      const tee = await fetchTEEData(result.rings);
+      setTeeData(tee);
     } catch (error) {
       setMessage("Lookup failed.");
     } finally {
@@ -273,6 +366,7 @@ export default function Home() {
 
           {message ? <p className="mt-3 px-1 text-sm text-neutral-500">{message}</p> : null}
           {loading ? <p className="mt-2 px-1 text-sm text-neutral-400">Loading parcel data…</p> : null}
+{parcel && !teeData && !loading ? <p className="mt-2 px-1 text-sm text-neutral-400">Loading TEE data…</p> : null}
         </div>
 
         {parcel ? (
