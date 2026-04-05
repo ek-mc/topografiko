@@ -230,10 +230,29 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 }
 
 export function toDXF(parcels: { kaek: string; rings: Point[][] }[]) {
+  let handle = 256;
   const entities = parcels.map((parcel) => {
     const pts = stripClosingPoint(parcel.rings[0]);
-    const lines = pts.map((p) => `10\n${p.x}\n20\n${p.y}\n30\n0`).join("\n");
-    return `0\nLWPOLYLINE\n8\n0\n90\n${pts.length}\n70\n1\n${lines}`;
+    const vertices = pts.map((p) => `10\n${p.x}\n20\n${p.y}`).join("\n");
+    return [
+      "0", "LWPOLYLINE",
+      "5", (handle++).toString(16).toUpperCase(),
+      "100", "AcDbEntity",
+      "8", "0",
+      "100", "AcDbPolyline",
+      "90", String(pts.length),
+      "70", "1",
+      vertices,
+    ].join("\n");
   }).join("\n");
-  return `0\nSECTION\n2\nENTITIES\n${entities}\n0\nENDSEC\n0\nEOF`;
+
+  return [
+    "0", "SECTION", "2", "HEADER", "0", "ENDSEC",
+    "0", "SECTION", "2", "TABLES", "0", "ENDSEC",
+    "0", "SECTION", "2", "BLOCKS", "0", "ENDSEC",
+    "0", "SECTION", "2", "ENTITIES",
+    entities,
+    "0", "ENDSEC",
+    "0", "EOF",
+  ].join("\n");
 }
