@@ -23,6 +23,7 @@ type TEEData = {
   fek: string;
   apofEidos: string;
   municipality: string;
+  rings: Point[][];
 };
 
 type NeighborParcel = {
@@ -31,6 +32,17 @@ type NeighborParcel = {
   area: number | null;
   rings: Point[][];
 };
+
+function transformFromGGRS87(x: number, y: number): [number, number] {
+  const wgs84 = "EPSG:4326";
+  const ggrs87 = "+proj=tmerc +lat_0=0 +lon_0=24 +k=0.9996 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=-199.87,74.79,246.62,0,0,0,0 +units=m +no_defs";
+  try {
+    const result = proj4(ggrs87, wgs84, [x, y]);
+    return [result[0], result[1]];
+  } catch {
+    return [x, y];
+  }
+}
 
 type RowInfo = {
   label: string;
@@ -254,12 +266,12 @@ async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
   
   const params = new URLSearchParams({
     f: 'json',
-    returnGeometry: 'false',
+    returnGeometry: 'true',
     spatialRel: 'esriSpatialRelIntersects',
     geometry,
     geometryType: 'esriGeometryEnvelope',
     inSR: '2100',
-    outFields: 'OBJECTID,FEK,OT_NUM,APOF_EIDOS,KALL_DHM_NAME',
+    outFields: 'OBJECTID,FEK,FEK_FILE_URL,PUBL_DATE,OT_NUM,APOF_EIDOS,TITLE,NUMBER_,SIGN_DATE,GEOREF_DIAGRAM_URL,INITIAL_DIAGRAM_URL,KALL_DHM_NAME,KEY_FLAG',
     outSR: '2100',
     layer: JSON.stringify({ source: { type: 'mapLayer', mapLayerId: 6 } }),
   });
@@ -279,9 +291,47 @@ async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
       fek: attrs.FEK || '',
       apofEidos: attrs.APOF_EIDOS || '',
       municipality: attrs.KALL_DHM_NAME || '',
+      rings: (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => { const [lon, lat] = transformFromGGRS87(point[0], point[1]); return { x: lon, y: lat }; })),
     };
   } catch {
     return null;
+  }
+}
+
+
+
+async function fetchParcelsInOT(otRings: Point[][], currentKaek: string): Promise<NeighborParcel[]> {
+  if (!otRings?.[0]?.length) return [];
+  const geometry = JSON.stringify({
+    rings: otRings.map((ring) => ring.map((p) => [p.x, p.y])),
+    spatialReference: { wkid: 4326 },
+  });
+  const params = new URLSearchParams({
+    f: 'json',
+    geometry,
+    geometryType: 'esriGeometryPolygon',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'KAEK,MAIN_USE,AREA',
+    returnGeometry: 'true',
+    outSR: '4326',
+    resultRecordCount: '200',
+    where: '1=1',
+  });
+  const url = `https://services-eu1.arcgis.com/40tFGWzosjaLJpmn/arcgis/rest/services/GEOTEMAXIA_LEITOURGOUN_ON_gdb/FeatureServer/0/query?${params.toString()}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    const features = data?.features || [];
+    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number }; geometry?: { rings?: number[][][] } }): NeighborParcel => ({
+      kaek: f.attributes.KAEK,
+      mainUse: f.attributes.MAIN_USE || '',
+      area: f.attributes.AREA,
+      rings: (f.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: point[0], y: point[1] }))),
+    })).filter((item: NeighborParcel) => item.kaek !== currentKaek);
+  } catch {
+    return [];
   }
 }
 
@@ -360,6 +410,7 @@ export default function Home({ initialKaek }: HomeProps) {
   const lengths = useMemo(() => (primaryRing.length ? edgeLengths(primaryRing) : []), [primaryRing]);
   const blockBounds = useMemo(() => {
     const allPoints = [
+      ...(teeData?.rings?.flatMap((ring) => stripClosingPoint(ring)) ?? []),
       ...primaryRing,
       ...neighbors.flatMap((neighbor) => stripClosingPoint(neighbor.rings?.[0] ?? [])),
     ];
@@ -469,9 +520,11 @@ export default function Home({ initialKaek }: HomeProps) {
       const tee = await fetchTEEData(result.rings);
       setTeeData(tee);
       
-      // Fetch neighboring parcels
-      const neighborList = await fetchNeighbors(result.rings, result.kaek);
-      setNeighbors(neighborList);
+      // Prefer all parcels inside OT, fallback to neighboring parcels
+      const parcelList = tee?.rings?.length
+        ? await fetchParcelsInOT(tee.rings, result.kaek)
+        : await fetchNeighbors(result.rings, result.kaek);
+      setNeighbors(parcelList);
     } catch (error) {
       setMessage("Lookup failed.");
     } finally {
@@ -548,6 +601,10 @@ export default function Home({ initialKaek }: HomeProps) {
 
               <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
+                {blockBounds && teeData?.rings?.map((ring, index) => {
+                  const otPath = pathFromRingWithBounds(ring, blockBounds);
+                  return <path key={`ot-${index}`} d={otPath} fill="rgba(59,130,246,0.04)" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="4 4" />;
+                })}
                 {blockBounds && neighbors.map((neighbor, index) => {
                   const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
                   if (!ring.length) return null;
@@ -710,7 +767,7 @@ export default function Home({ initialKaek }: HomeProps) {
               {/* Neighboring Parcels */}
               {neighbors.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Όμορα Οικόπεδα</h3>
+                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Οικόπεδα μέσα στο Ο.Τ.</h3>
                   <div className="max-h-64 overflow-auto rounded-xl border border-neutral-200">
                     <table className="w-full border-collapse text-sm">
                       <thead>
