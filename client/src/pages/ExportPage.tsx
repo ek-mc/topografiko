@@ -95,7 +95,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     const base = includeBlock ? `${parcel.kaek}-ot` : parcel.kaek;
     if (format === "geojson") downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
     if (format === "kml") downloadText(`${base}.kml`, toKML(base, parcels), "application/vnd.google-earth.kml+xml;charset=utf-8");
-    if (format === "dxf") downloadText(`${base}.dxf`, toDXF(parcels), "application/dxf;charset=utf-8");
+    if (format === "dxf") downloadText(`${base}.dxf`, toDXF(parcels, { kaek: parcel.kaek, ot: teeData?.otNumber, municipality: teeData?.municipality, region: "(#Περιφέρεια)", includeTitleBlock: mode === "full" }), "application/dxf;charset=utf-8");
   };
 
   const coords = useMemo(() => parcel ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({ i: i + 1, x: p.x, y: p.y })) : [], [parcel]);

@@ -230,7 +230,10 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
   return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${name}</name>${placemarks}</Document></kml>`;
 }
 
-export function toDXF(parcels: { kaek: string; rings: Point[][] }[]) {
+export function toDXF(
+  parcels: { kaek: string; rings: Point[][] }[],
+  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean },
+) {
   const writer = new DxfWriter();
 
   parcels.forEach((parcel) => {
@@ -241,6 +244,37 @@ export function toDXF(parcels: { kaek: string; rings: Point[][] }[]) {
       writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0));
     });
   });
+
+  if (meta?.includeTitleBlock) {
+    const points = parcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
+    if (points.length) {
+      const bounds = boundsFromPoints(points);
+      const width = Math.max(1, bounds.maxX - bounds.minX);
+      const height = Math.max(1, bounds.maxY - bounds.minY);
+      const boxWidth = width * 0.75;
+      const boxHeight = height * 0.55;
+      const x0 = bounds.maxX + width * 0.12;
+      const y0 = bounds.minY;
+      const x1 = x0 + boxWidth;
+      const y1 = y0 + boxHeight;
+      writer.addLine(point3d(x0, y0, 0), point3d(x1, y0, 0));
+      writer.addLine(point3d(x1, y0, 0), point3d(x1, y1, 0));
+      writer.addLine(point3d(x1, y1, 0), point3d(x0, y1, 0));
+      writer.addLine(point3d(x0, y1, 0), point3d(x0, y0, 0));
+      const lines = [
+        ["Μελετητής", "grey placeholder"],
+        ["Έργο", "Τοπογραφικό Διάγραμμα"],
+        ["Θέση", `Ο.Τ. ${meta.ot || "***"}, Δήμου ${meta.municipality || "(#Καλλικρατικός Δήμος)"}, ${meta.region || "(#Περιφέρεια)"}`],
+        ["KAEK", meta.kaek || "—"],
+      ];
+      const step = boxHeight / 6;
+      lines.forEach(([label, value], i) => {
+        const y = y1 - step * (i + 1);
+        writer.addText(point3d(x0 + boxWidth * 0.04, y, 0), step * 0.25, label);
+        writer.addText(point3d(x0 + boxWidth * 0.32, y, 0), step * 0.25, value);
+      });
+    }
+  }
 
   return writer.stringify();
 }
