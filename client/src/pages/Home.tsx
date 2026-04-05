@@ -49,6 +49,7 @@ type RowInfo = {
   value: string;
   source: "Κτηματολόγιο" | "TEE" | "Local JSON" | "Σύνθεση";
   sourceDetail?: string;
+  primary?: boolean;
 };
 
 function formatNumber(value: number | null, digits = 2) {
@@ -404,6 +405,7 @@ export default function Home({ initialKaek }: HomeProps) {
   const [neighbors, setNeighbors] = useState<NeighborParcel[]>([]);
   const [copiedKey, setCopiedKey] = useState("");
   const [openInfoKey, setOpenInfoKey] = useState("");
+  const [showMoreRows, setShowMoreRows] = useState(false);
 
   const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
@@ -441,13 +443,13 @@ export default function Home({ initialKaek }: HomeProps) {
     const hasCategory = !!mainUseInfo?.category;
     
     const rows: RowInfo[] = [
-      { label: "KAEK", value: parcel.kaek, source: "Κτηματολόγιο", sourceDetail: "Επίσημο layer γεωτεμαχίων Κτηματολογίου" },
+      { label: "KAEK", value: parcel.kaek, source: "Κτηματολόγιο", sourceDetail: "Επίσημο layer γεωτεμαχίων Κτηματολογίου", primary: true },
       { label: "Κωδικός ΟΤΑ", value: parcel.otaCode || "—", source: "Σύνθεση", sourceDetail: "Εξαγωγή από KAEK + local enrichment" },
-      { label: "Νομός", value: otaInfo?.nomos || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
+      { label: "Νομός", value: otaInfo?.nomos || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων", primary: true },
       { label: "ΟΤΑ", value: otaInfo?.ota || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
       { label: "Κτηματολογικό Γραφείο", value: otaInfo?.cadastralOffice || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
-      { label: "Εμβαδό", value: parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—", source: "Κτηματολόγιο", sourceDetail: "AREA από ArcGIS service" },
-      { label: "Περίμετρος", value: parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—", source: "Κτηματολόγιο", sourceDetail: "PERIMETER από ArcGIS service" },
+      { label: "Εμβαδό", value: parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—", source: "Κτηματολόγιο", sourceDetail: "AREA από ArcGIS service", primary: true },
+      { label: "Περίμετρος", value: parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—", source: "Κτηματολόγιο", sourceDetail: "PERIMETER από ArcGIS service", primary: true },
     ];
     
     if (hasCategory) {
@@ -463,10 +465,10 @@ export default function Home({ initialKaek }: HomeProps) {
     // TEE data (Ο.Τ.)
     if (teeData) {
       rows.push(
-        { label: "Οικοδομικό Τετράγωνο (Ο.Τ.)", value: teeData.otNumber || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
+        { label: "Οικοδομικό Τετράγωνο (Ο.Τ.)", value: teeData.otNumber || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI", primary: true },
         { label: "ΦΕΚ", value: teeData.fek || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
         { label: "Τύπος Έγκρισης", value: teeData.apofEidos || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
-        { label: "Καλλικρατικός Δήμος", value: teeData.municipality || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
+        { label: "Καλλικρατικός Δήμος", value: teeData.municipality || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI", primary: true },
       );
     }
     
@@ -481,6 +483,8 @@ export default function Home({ initialKaek }: HomeProps) {
   }, [parcel, teeData]);
 
 
+
+  const displayedRows = useMemo(() => (showMoreRows ? visibleRows : visibleRows.filter((row) => row.primary)), [visibleRows, showMoreRows]);
 
   const copyValue = async (key: string, value: string) => {
     if (!value || value === "—") return;
@@ -632,7 +636,7 @@ export default function Home({ initialKaek }: HomeProps) {
               <div className="overflow-hidden rounded-xl border border-neutral-200">
                 <table className="w-full border-collapse text-sm">
                   <tbody>
-                    {visibleRows.map((row) => {
+                    {displayedRows.map((row) => {
                       const { label, value, source, sourceDetail } = row;
                       const copyKey = `row-${label}`;
                       return (
@@ -675,6 +679,18 @@ export default function Home({ initialKaek }: HomeProps) {
                   </tbody>
                 </table>
               </div>
+
+              {visibleRows.some((row) => !row.primary) ? (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreRows((current) => !current)}
+                    className="rounded-xl border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                  >
+                    {showMoreRows ? "− λιγότερα" : "+ περισσότερα"}
+                  </button>
+                </div>
+              ) : null}
 
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
                 <div>
