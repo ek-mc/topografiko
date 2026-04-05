@@ -1,4 +1,4 @@
-import { Search, Download, Copy, Check } from "lucide-react";
+import { Search, Download, Copy, Check, House } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import proj4 from "proj4";
@@ -439,7 +439,25 @@ export default function Home({ initialKaek }: HomeProps) {
     <main className="min-h-screen bg-white px-4 py-10 text-neutral-900">
       <div className="mx-auto w-full max-w-5xl">
         <div className="mx-auto w-full max-w-2xl">
-          <div className="flex items-center gap-2 rounded-2xl border border-neutral-300 bg-white px-3 py-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setMessage("");
+                setParcel(null);
+                setTeeData(null);
+                setNeighbors([]);
+                navigate(`/`);
+              }}
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50"
+              aria-label="Home"
+              title="Αρχική"
+            >
+              <House className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-2 rounded-2xl border border-neutral-300 bg-white px-3 py-3 shadow-sm flex-1">
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -462,6 +480,7 @@ export default function Home({ initialKaek }: HomeProps) {
             >
               <Search className="h-5 w-5" />
             </button>
+            </div>
           </div>
 
           {message ? <p className="mt-3 px-1 text-sm text-neutral-500">{message}</p> : null}
