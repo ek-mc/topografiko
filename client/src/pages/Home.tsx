@@ -179,6 +179,7 @@ export default function Home() {
       ["Κτηματολογικό Γραφείο", otaInfo?.cadastralOffice || "—"],
       ["Εμβαδό", parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—"],
       ["Περίμετρος", parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—"],
+      ["Κωδικός Κύριας Χρήσης", parcel.mainUse || "—"],
       ["Κατηγορία Χρήσης", mainUseInfo?.category || "—"],
       ["Υποκατηγορία Χρήσης", mainUseInfo?.subcategory || "—"],
       ["Περιγραφή", parcel.description || "—"],
