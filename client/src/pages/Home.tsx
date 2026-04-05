@@ -29,6 +29,7 @@ type NeighborParcel = {
   kaek: string;
   mainUse: string;
   area: number | null;
+  rings: Point[][];
 };
 
 type RowInfo = {
@@ -149,6 +150,36 @@ function shapePath(points: Point[]) {
       return `${index === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`;
     })
     .join(" ") + " Z";
+}
+
+
+
+function projectPoint(point: Point, bounds: { minX: number; maxX: number; minY: number; maxY: number }, size = 320, pad = 22) {
+  const width = Math.max(1e-9, bounds.maxX - bounds.minX);
+  const height = Math.max(1e-9, bounds.maxY - bounds.minY);
+  const scale = Math.min((size - pad * 2) / width, (size - pad * 2) / height);
+  const offsetX = (size - width * scale) / 2;
+  const offsetY = (size - height * scale) / 2;
+  return {
+    x: offsetX + (point.x - bounds.minX) * scale,
+    y: size - (offsetY + (point.y - bounds.minY) * scale),
+  };
+}
+
+function pathFromRingWithBounds(points: Point[], bounds: { minX: number; maxX: number; minY: number; maxY: number }) {
+  const usable = stripClosingPoint(points);
+  if (!usable.length) return "";
+  return usable.map((point, index) => {
+    const p = projectPoint(point, bounds);
+    return `${index === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+  }).join(" ") + " Z";
+}
+
+function centroid(points: Point[]) {
+  const usable = stripClosingPoint(points);
+  if (!usable.length) return { x: 0, y: 0 };
+  const sum = usable.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  return { x: sum.x / usable.length, y: sum.y / usable.length };
 }
 
 async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
@@ -284,6 +315,7 @@ async function fetchNeighbors(rings: Point[][], currentKaek: string): Promise<Ne
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
     outFields: 'KAEK,MAIN_USE,AREA',
+    returnGeometry: 'true',
     outSR: '4326',
     resultRecordCount: '20',
     where: `KAEK<>'${currentKaek}'`,
@@ -297,10 +329,11 @@ async function fetchNeighbors(rings: Point[][], currentKaek: string): Promise<Ne
     const data = await response.json();
     const features = data?.features || [];
     
-    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number } }) => ({
+    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number }; geometry?: { rings?: number[][][] } }) => ({
       kaek: f.attributes.KAEK,
       mainUse: f.attributes.MAIN_USE || '',
       area: f.attributes.AREA,
+      rings: (f.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: point[0], y: point[1] }))),
     })).slice(0, 10);
   } catch {
     return [];
@@ -325,6 +358,16 @@ export default function Home({ initialKaek }: HomeProps) {
   const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
   const lengths = useMemo(() => (primaryRing.length ? edgeLengths(primaryRing) : []), [primaryRing]);
+  const blockBounds = useMemo(() => {
+    const allPoints = [
+      ...primaryRing,
+      ...neighbors.flatMap((neighbor) => stripClosingPoint(neighbor.rings?.[0] ?? [])),
+    ];
+    if (!allPoints.length) return null;
+    const xs = allPoints.map((p) => p.x);
+    const ys = allPoints.map((p) => p.y);
+    return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  }, [primaryRing, neighbors]);
 
   useEffect(() => {
     if (initialKaek) {
@@ -505,10 +548,36 @@ export default function Home({ initialKaek }: HomeProps) {
 
               <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
-                <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
-                {primaryRing.map((point, index) => {
-                  const project = createSvgProjector(primaryRing);
-                  const p = project(point);
+                {blockBounds && neighbors.map((neighbor, index) => {
+                  const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
+                  if (!ring.length) return null;
+                  const nPath = pathFromRingWithBounds(ring, blockBounds);
+                  const c = projectPoint(centroid(ring), blockBounds);
+                  return (
+                    <g key={neighbor.kaek}>
+                      <path
+                        d={nPath}
+                        fill="rgba(148,163,184,0.15)"
+                        stroke="#94a3b8"
+                        strokeWidth="1.5"
+                        className="cursor-pointer"
+                        onClick={() => {
+                          setQuery(neighbor.kaek);
+                          navigate(`/o/${neighbor.kaek}`);
+                          setTimeout(() => {
+                            const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
+                            button?.click();
+                          }, 10);
+                        }}
+                      />
+                      <circle cx={c.x} cy={c.y} r="11" fill="white" stroke="#94a3b8" />
+                      <text x={c.x} y={c.y + 4} fontSize="11" textAnchor="middle" fill="#475569">{index + 1}</text>
+                    </g>
+                  );
+                })}
+                {blockBounds ? <path d={pathFromRingWithBounds(primaryRing, blockBounds)} fill="rgba(17,24,39,0.08)" stroke="#111827" strokeWidth="2.2" /> : <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />}
+                {(blockBounds ? primaryRing : primaryRing).map((point, index) => {
+                  const p = blockBounds ? projectPoint(point, blockBounds) : createSvgProjector(primaryRing)(point);
                   const dx = index % 2 === 0 ? 8 : -18;
                   const dy = index % 2 === 0 ? -8 : 16;
                   return (
@@ -652,7 +721,7 @@ export default function Home({ initialKaek }: HomeProps) {
                         </tr>
                       </thead>
                       <tbody>
-                        {neighbors.map((neighbor) => (
+                        {neighbors.map((neighbor, index) => (
                           <tr key={neighbor.kaek} className="border-t border-neutral-200">
                             <td className="px-3 py-2">
                               <a
@@ -668,7 +737,7 @@ export default function Home({ initialKaek }: HomeProps) {
                                 }}
                                 className="text-blue-600 hover:underline"
                               >
-                                {neighbor.kaek}
+                                {index + 1}. {neighbor.kaek}
                               </a>
                             </td>
                             <td className="px-3 py-2">{neighbor.mainUse || "—"}</td>
