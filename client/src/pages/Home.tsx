@@ -31,6 +31,13 @@ type NeighborParcel = {
   area: number | null;
 };
 
+type RowInfo = {
+  label: string;
+  value: string;
+  source: "Κτηματολόγιο" | "TEE" | "Local JSON" | "Σύνθεση";
+  sourceDetail?: string;
+};
+
 function formatNumber(value: number | null, digits = 2) {
   if (value == null || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat("el-GR", {
@@ -332,47 +339,47 @@ export default function Home({ initialKaek }: HomeProps) {
   }, [initialKaek, query, loading, parcel?.kaek]);
 
   const visibleRows = useMemo(() => {
-    if (!parcel) return [] as Array<[string, string]>;
+    if (!parcel) return [] as RowInfo[];
     const attrs = parcel.raw;
     const otaInfo = (otaOfficeMap as Record<string, { otaCode: string; nomos: string; ota: string; cadastralOffice: string; raw: string }>)[parcel.otaCode];
     const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[parcel.mainUse];
     const hasCategory = !!mainUseInfo?.category;
     
-    const rows: Array<[string, string]> = [
-      ["KAEK", parcel.kaek],
-      ["Κωδικός ΟΤΑ", parcel.otaCode || "—"],
-      ["Νομός", otaInfo?.nomos || "—"],
-      ["ΟΤΑ", otaInfo?.ota || "—"],
-      ["Κτηματολογικό Γραφείο", otaInfo?.cadastralOffice || "—"],
-      ["Εμβαδό", parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—"],
-      ["Περίμετρος", parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—"],
+    const rows: RowInfo[] = [
+      { label: "KAEK", value: parcel.kaek, source: "Κτηματολόγιο", sourceDetail: "Επίσημο layer γεωτεμαχίων Κτηματολογίου" },
+      { label: "Κωδικός ΟΤΑ", value: parcel.otaCode || "—", source: "Σύνθεση", sourceDetail: "Εξαγωγή από KAEK + local enrichment" },
+      { label: "Νομός", value: otaInfo?.nomos || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
+      { label: "ΟΤΑ", value: otaInfo?.ota || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
+      { label: "Κτηματολογικό Γραφείο", value: otaInfo?.cadastralOffice || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
+      { label: "Εμβαδό", value: parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—", source: "Κτηματολόγιο", sourceDetail: "AREA από ArcGIS service" },
+      { label: "Περίμετρος", value: parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—", source: "Κτηματολόγιο", sourceDetail: "PERIMETER από ArcGIS service" },
     ];
     
     if (hasCategory) {
       rows.push(
-        ["Κωδικός Κύριας Χρήσης", parcel.mainUse || "—"],
-        ["Κατηγορία Χρήσης", mainUseInfo?.category || "—"],
-        ["Υποκατηγορία Χρήσης", mainUseInfo?.subcategory || "—"],
+        { label: "Κωδικός Κύριας Χρήσης", value: parcel.mainUse || "—", source: "Κτηματολόγιο", sourceDetail: "MAIN_USE code από Κτηματολόγιο" },
+        { label: "Κατηγορία Χρήσης", value: mainUseInfo?.category || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping κύριας χρήσης από PDF" },
+        { label: "Υποκατηγορία Χρήσης", value: mainUseInfo?.subcategory || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping κύριας χρήσης από PDF" },
       );
     } else {
-      rows.push(["Περιγραφή", parcel.description || "—"]);
+      rows.push({ label: "Περιγραφή", value: parcel.description || "—", source: "Κτηματολόγιο", sourceDetail: "DESCR από ArcGIS service" });
     }
     
     // TEE data (Ο.Τ.)
     if (teeData) {
       rows.push(
-        ["Οικοδομικό Τετράγωνο (Ο.Τ.)", teeData.otNumber || "—"],
-        ["ΦΕΚ", teeData.fek || "—"],
-        ["Τύπος Έγκρισης", teeData.apofEidos || "—"],
-        ["Καλλικρατικός Δήμος", teeData.municipality || "—"],
+        { label: "Οικοδομικό Τετράγωνο (Ο.Τ.)", value: teeData.otNumber || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
+        { label: "ΦΕΚ", value: teeData.fek || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
+        { label: "Τύπος Έγκρισης", value: teeData.apofEidos || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
+        { label: "Καλλικρατικός Δήμος", value: teeData.municipality || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
       );
     }
     
     rows.push(
-      ["ΟΤΑ / link", parcel.link || "—"],
-      ["Αριθμός Καθέτων", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
-      ["Αριθμός Οριζοντίων", attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—"],
-      ["Ποσοστό Κύριας Χρήσης", attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—"],
+      { label: "ΟΤΑ / link", value: parcel.link || "—", source: "Κτηματολόγιο", sourceDetail: "LINK από ArcGIS service" },
+      { label: "Αριθμός Καθέτων", value: attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—", source: "Κτηματολόγιο", sourceDetail: "PROP_VERT από ArcGIS service" },
+      { label: "Αριθμός Οριζοντίων", value: attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—", source: "Κτηματολόγιο", sourceDetail: "PROP_HOR από ArcGIS service" },
+      { label: "Ποσοστό Κύριας Χρήσης", value: attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—", source: "Κτηματολόγιο", sourceDetail: "PERCENTAGE από ArcGIS service" },
     );
     
     return rows;
@@ -501,7 +508,8 @@ export default function Home({ initialKaek }: HomeProps) {
               <div className="overflow-hidden rounded-xl border border-neutral-200">
                 <table className="w-full border-collapse text-sm">
                   <tbody>
-                    {visibleRows.map(([label, value]) => {
+                    {visibleRows.map((row) => {
+                      const { label, value, source, sourceDetail } = row;
                       const copyKey = `row-${label}`;
                       return (
                         <tr key={label} className="border-b border-neutral-200 last:border-b-0">
@@ -509,6 +517,13 @@ export default function Home({ initialKaek }: HomeProps) {
                           <td className="px-4 py-3 text-neutral-900">
                             <div className="flex items-center justify-between gap-3">
                               <span>{value}</span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="inline-flex items-center rounded-full border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-600"
+                                  title={sourceDetail || source}
+                                >
+                                  {source}
+                                </span>
                               <button
                                 type="button"
                                 onClick={() => copyValue(copyKey, value)}
@@ -518,6 +533,7 @@ export default function Home({ initialKaek }: HomeProps) {
                               >
                                 {copiedKey === copyKey ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                               </button>
+                              </div>
                             </div>
                           </td>
                         </tr>
