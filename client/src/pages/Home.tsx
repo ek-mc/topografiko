@@ -170,7 +170,7 @@ export default function Home() {
     if (!parcel) return [] as Array<[string, string]>;
     const attrs = parcel.raw;
     const otaInfo = (otaOfficeMap as Record<string, { otaCode: string; nomos: string; ota: string; cadastralOffice: string; raw: string }>)[parcel.otaCode];
-    const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string; label: string }>)[parcel.mainUse];
+    const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[parcel.mainUse];
     return [
       ["KAEK", parcel.kaek],
       ["Κωδικός ΟΤΑ", parcel.otaCode || "—"],
@@ -179,12 +179,13 @@ export default function Home() {
       ["Κτηματολογικό Γραφείο", otaInfo?.cadastralOffice || "—"],
       ["Εμβαδό", parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—"],
       ["Περίμετρος", parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—"],
-      ["Κύρια χρήση", mainUseInfo?.label || (parcel.mainUse || "—")],
+      ["Κατηγορία Χρήσης", mainUseInfo?.category || "—"],
+      ["Υποκατηγορία Χρήσης", mainUseInfo?.subcategory || "—"],
       ["Περιγραφή", parcel.description || "—"],
       ["ΟΤΑ / link", parcel.link || "—"],
-      ["PROP_VERT", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
-      ["PROP_HOR", attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—"],
-      ["Ποσοστό επί της ιδιοκτησίας", attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—"],
+      ["Αριθμός Καθέτων", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
+      ["Αριθμός Οριζοντίων", attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—"],
+      ["Ποσοστό Κύριας Χρήσης", attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—"],
     ];
   }, [parcel]);
 
