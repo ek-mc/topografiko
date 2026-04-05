@@ -62,8 +62,16 @@ function greekLabel(index: number) {
   return letters[index] || `P${index + 1}`;
 }
 
+function stripClosingPoint(points: Point[]) {
+  if (points.length < 2) return [...points];
+  const first = points[0];
+  const last = points[points.length - 1];
+  const isClosed = first.x === last.x && first.y === last.y;
+  return isClosed ? points.slice(0, -1) : [...points];
+}
+
 function normalizeRing(points: Point[]) {
-  const usable = points.length > 1 ? points.slice(0, -1) : points;
+  const usable = stripClosingPoint(points);
   if (!usable.length) return [];
 
   let startIndex = 0;
@@ -96,7 +104,7 @@ function edgeLengths(points: Point[]) {
 }
 
 function boundsFromRing(points: Point[]) {
-  const usable = points.length > 1 ? points.slice(0, -1) : points;
+  const usable = stripClosingPoint(points)
   const xs = usable.map((p) => p.x);
   const ys = usable.map((p) => p.y);
   return {
