@@ -257,7 +257,8 @@ export function toDXF(
 
   const points = projectedParcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
   if (points.length) {
-    const bounds = boundsFromPoints(points);
+    const parcelOnlyPoints = stripClosingPoint(projectedParcels[0].rings[0]);
+    const bounds = boundsFromPoints(parcelOnlyPoints.length ? parcelOnlyPoints : points);
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
     const scale = 1000 / scaleDenominator; // meters -> mm on paper
@@ -267,12 +268,20 @@ export function toDXF(
       x: windowCenterX + (p.x - centerX) * scale,
       y: windowCenterY + (p.y - centerY) * scale,
     });
+    const toWorld = (sx: number, sy: number) => ({
+      x: centerX + (sx - windowCenterX) / scale,
+      y: centerY + (sy - windowCenterY) / scale,
+    });
 
     // A3 frame and drawing window
     writer.addLine(point3d(0, 0, 0), point3d(paper.width, 0, 0));
     writer.addLine(point3d(paper.width, 0, 0), point3d(paper.width, paper.height, 0));
     writer.addLine(point3d(paper.width, paper.height, 0), point3d(0, paper.height, 0));
     writer.addLine(point3d(0, paper.height, 0), point3d(0, 0, 0));
+    writer.addLine(point3d(drawWin.x0, drawWin.y0, 0), point3d(drawWin.x1, drawWin.y0, 0));
+    writer.addLine(point3d(drawWin.x1, drawWin.y0, 0), point3d(drawWin.x1, drawWin.y1, 0));
+    writer.addLine(point3d(drawWin.x1, drawWin.y1, 0), point3d(drawWin.x0, drawWin.y1, 0));
+    writer.addLine(point3d(drawWin.x0, drawWin.y1, 0), point3d(drawWin.x0, drawWin.y0, 0));
     writer.addLine(point3d(drawWin.x1, 0, 0), point3d(drawWin.x1, paper.height, 0));
 
     projectedParcels.forEach((parcel) => {
@@ -288,6 +297,21 @@ export function toDXF(
     writer.addText(point3d(drawWin.x0 + 8, drawWin.y1 - 8, 0), 3, 'N');
     writer.addLine(point3d(drawWin.x0 + 8, drawWin.y1 - 20, 0), point3d(drawWin.x0 + 8, drawWin.y1 - 10, 0));
     writer.addText(point3d(drawWin.x0 + 18, drawWin.y1 - 8, 0), 2.5, `1:${scaleDenominator}`);
+
+    // coordinate frame ticks
+    const tickStep = 40;
+    for (let sx = drawWin.x0; sx <= drawWin.x1 + 0.1; sx += tickStep) {
+      writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 2.5, 0));
+      writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 2.5, 0));
+      const world = toWorld(sx, drawWin.y0);
+      writer.addText(point3d(sx - 5, drawWin.y0 - 6, 0), 1.8, world.x.toFixed(2));
+    }
+    for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
+      writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 2.5, sy, 0));
+      writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 2.5, sy, 0));
+      const world = toWorld(drawWin.x0, sy);
+      writer.addText(point3d(drawWin.x0 - 18, sy, 0), 1.8, world.y.toFixed(2));
+    }
 
     if (meta?.includeTitleBlock) {
       const x0 = drawWin.x1 + 6;
