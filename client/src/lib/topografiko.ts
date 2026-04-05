@@ -1,4 +1,5 @@
 import proj4 from "proj4";
+import { DxfWriter, point3d } from "@tarikjabiri/dxf";
 
 export type Point = { x: number; y: number };
 export type ParcelData = {
@@ -230,38 +231,16 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 }
 
 export function toDXF(parcels: { kaek: string; rings: Point[][] }[]) {
-  let handle = 256;
-  const entities = parcels.flatMap((parcel) => {
-    const pts = stripClosingPoint(parcel.rings[0]);
-    if (pts.length < 2) return [] as string[];
-    return pts.map((start, index) => {
-      const end = pts[(index + 1) % pts.length];
-      return [
-        "0", "LINE",
-        "5", (handle++).toString(16).toUpperCase(),
-        "100", "AcDbEntity",
-        "8", "0",
-        "100", "AcDbLine",
-        "10", String(start.x),
-        "20", String(start.y),
-        "30", "0",
-        "11", String(end.x),
-        "21", String(end.y),
-        "31", "0",
-      ].join("\n");
-    });
-  }).join("\n");
+  const writer = new DxfWriter();
 
-  return [
-    "0", "SECTION", "2", "HEADER",
-    "9", "$ACADVER",
-    "1", "AC1015",
-    "0", "ENDSEC",
-    "0", "SECTION", "2", "TABLES", "0", "ENDSEC",
-    "0", "SECTION", "2", "BLOCKS", "0", "ENDSEC",
-    "0", "SECTION", "2", "ENTITIES",
-    entities,
-    "0", "ENDSEC",
-    "0", "EOF",
-  ].join("\n");
+  parcels.forEach((parcel) => {
+    const pts = stripClosingPoint(parcel.rings[0]);
+    if (pts.length < 2) return;
+    pts.forEach((start, index) => {
+      const end = pts[(index + 1) % pts.length];
+      writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0));
+    });
+  });
+
+  return writer.stringify();
 }
