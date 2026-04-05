@@ -171,7 +171,9 @@ export default function Home() {
     const attrs = parcel.raw;
     const otaInfo = (otaOfficeMap as Record<string, { otaCode: string; nomos: string; ota: string; cadastralOffice: string; raw: string }>)[parcel.otaCode];
     const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[parcel.mainUse];
-    return [
+    const hasCategory = !!mainUseInfo?.category;
+    
+    const rows: Array<[string, string]> = [
       ["KAEK", parcel.kaek],
       ["Κωδικός ΟΤΑ", parcel.otaCode || "—"],
       ["Νομός", otaInfo?.nomos || "—"],
@@ -179,15 +181,26 @@ export default function Home() {
       ["Κτηματολογικό Γραφείο", otaInfo?.cadastralOffice || "—"],
       ["Εμβαδό", parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—"],
       ["Περίμετρος", parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—"],
-      ["Κωδικός Κύριας Χρήσης", parcel.mainUse || "—"],
-      ["Κατηγορία Χρήσης", mainUseInfo?.category || "—"],
-      ["Υποκατηγορία Χρήσης", mainUseInfo?.subcategory || "—"],
-      ["Περιγραφή", parcel.description || "—"],
+    ];
+    
+    if (hasCategory) {
+      rows.push(
+        ["Κωδικός Κύριας Χρήσης", parcel.mainUse || "—"],
+        ["Κατηγορία Χρήσης", mainUseInfo?.category || "—"],
+        ["Υποκατηγορία Χρήσης", mainUseInfo?.subcategory || "—"],
+      );
+    } else {
+      rows.push(["Περιγραφή", parcel.description || "—"]);
+    }
+    
+    rows.push(
       ["ΟΤΑ / link", parcel.link || "—"],
       ["Αριθμός Καθέτων", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
       ["Αριθμός Οριζοντίων", attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—"],
       ["Ποσοστό Κύριας Χρήσης", attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—"],
-    ];
+    );
+    
+    return rows;
   }, [parcel]);
 
 
