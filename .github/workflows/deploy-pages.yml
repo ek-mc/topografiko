@@ -1,4 +1,4 @@
-name: Deploy openkaek to GitHub Pages
+name: Deploy topografiko to GitHub Pages
 
 on:
   push:
