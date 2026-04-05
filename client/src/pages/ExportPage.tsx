@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Download } from "lucide-react";
+import mainUseMap from "@shared/main-use-map.json";
 import {
   boundsFromPoints,
   downloadText,
@@ -26,6 +27,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [parcel, setParcel] = useState<ParcelData | null>(null);
   const [teeData, setTeeData] = useState<TEEData | null>(null);
   const [otParcels, setOtParcels] = useState<NeighborParcel[]>([]);
+  const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
   const [loading, setLoading] = useState(false);
   const [wholeBlock, setWholeBlock] = useState(false);
 
@@ -40,7 +42,16 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         setTeeData(tee);
         if (tee?.rings?.length) {
           const block = await fetchParcelsInOT(tee.rings, result.kaek);
-          setOtParcels(block);
+          const filtered = block.filter((item) => {
+            const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
+            const category = info?.category || "";
+            const subcategory = info?.subcategory || "";
+            const isRoad = category.includes("ΟΔΙΚΟ") || subcategory.includes("ΟΔΙΚΟ") || item.mainUse === "5100";
+            const isHuge = (item.area ?? 0) > 5000;
+            return !isRoad && !isHuge;
+          });
+          setOtParcels(filtered);
+          setContextParcels(filtered);
         }
       }
       setLoading(false);
@@ -54,7 +65,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [parcel, otParcels, wholeBlock]);
 
   const previewBounds = useMemo(() => {
-    const points = previewParcels.flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
+    const points = [...contextParcels, ...previewParcels].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
   }, [previewParcels]);
 
@@ -99,6 +110,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 {teeData?.rings?.map((ring, index) => (
                   <path key={index} d={pathFromRingWithBounds(ring, previewBounds)} fill="rgba(59,130,246,0.04)" stroke="#cbd5e1" strokeWidth="1.2" />
                 ))}
+                {!wholeBlock ? contextParcels.map((item) => {
+                  const path = pathFromRingWithBounds(item.rings[0], previewBounds);
+                  return <path key={`ctx-${item.kaek}`} d={path} fill="rgba(148,163,184,0.08)" stroke="#cbd5e1" strokeWidth="1" />;
+                }) : null}
                 {previewParcels.map((item) => {
                   const path = pathFromRingWithBounds(item.rings[0], previewBounds);
                   const pts = stripClosingPoint(item.rings[0]);
@@ -121,7 +136,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               <button type="button" onClick={() => download("geojson")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50"><Download className="h-4 w-4" />GeoJSON</button>
             </div>
 
-            <Link to={initialKaek ? `/o/${initialKaek}` : "/"} className="inline-flex text-sm text-blue-600 hover:underline">επιστροφή στο parcel</Link>
           </section>
         ) : null}
       </div>

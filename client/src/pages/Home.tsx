@@ -462,7 +462,6 @@ export default function Home({ initialKaek }: HomeProps) {
   const lengths = useMemo(() => (primaryRing.length ? edgeLengths(primaryRing) : []), [primaryRing]);
   const blockBounds = useMemo(() => {
     const allPoints = [
-      ...otContext.flatMap((ot) => ot.rings.flatMap((ring) => stripClosingPoint(ring))),
       ...(teeData?.rings?.flatMap((ring) => stripClosingPoint(ring)) ?? []),
       ...primaryRing,
       ...neighbors.flatMap((neighbor) => stripClosingPoint(neighbor.rings?.[0] ?? [])),
