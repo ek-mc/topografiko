@@ -26,6 +26,10 @@ type TEEData = {
   rings: Point[][];
 };
 
+type OTContextPolygon = {
+  rings: Point[][];
+};
+
 type NeighborParcel = {
   kaek: string;
   mainUse: string;
@@ -301,6 +305,51 @@ async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
 
 
 
+
+
+async function fetchNearbyOTPolygons(rings: Point[][], currentOt: string): Promise<OTContextPolygon[]> {
+  if (!rings?.[0]?.length) return [];
+  const points = rings[0];
+  const lons = points.map((p) => p.x);
+  const lats = points.map((p) => p.y);
+  const minLon = Math.min(...lons) - 0.0015;
+  const maxLon = Math.max(...lons) + 0.0015;
+  const minLat = Math.min(...lats) - 0.0015;
+  const maxLat = Math.max(...lats) + 0.0015;
+  const [xmin, ymin] = transformToGGRS87(minLon, minLat);
+  const [xmax, ymax] = transformToGGRS87(maxLon, maxLat);
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 2100 } });
+  const params = new URLSearchParams({
+    f: 'json',
+    returnGeometry: 'true',
+    spatialRel: 'esriSpatialRelIntersects',
+    geometry,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '2100',
+    outFields: 'OT_NUM',
+    outSR: '2100',
+    layer: JSON.stringify({ source: { type: 'mapLayer', mapLayerId: 6 } }),
+  });
+  const url = `https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/dynamicLayer/query?${params.toString()}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    const features = data?.features || [];
+    return features
+      .filter((feature: { attributes?: { OT_NUM?: string } }) => feature.attributes?.OT_NUM && feature.attributes.OT_NUM !== currentOt)
+      .slice(0, 12)
+      .map((feature: { geometry?: { rings?: number[][][] } }) => ({
+        rings: (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => {
+          const [lon, lat] = transformFromGGRS87(point[0], point[1]);
+          return { x: lon, y: lat };
+        })),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function fetchParcelsInOT(otRings: Point[][], currentKaek: string): Promise<NeighborParcel[]> {
   if (!otRings?.[0]?.length) return [];
   const geometry = JSON.stringify({
@@ -403,6 +452,7 @@ export default function Home({ initialKaek }: HomeProps) {
   const [parcel, setParcel] = useState<ParcelData | null>(null);
   const [teeData, setTeeData] = useState<TEEData | null>(null);
   const [neighbors, setNeighbors] = useState<NeighborParcel[]>([]);
+  const [otContext, setOtContext] = useState<OTContextPolygon[]>([]);
   const [copiedKey, setCopiedKey] = useState("");
   const [openInfoKey, setOpenInfoKey] = useState("");
   const [showMoreRows, setShowMoreRows] = useState(false);
@@ -412,6 +462,7 @@ export default function Home({ initialKaek }: HomeProps) {
   const lengths = useMemo(() => (primaryRing.length ? edgeLengths(primaryRing) : []), [primaryRing]);
   const blockBounds = useMemo(() => {
     const allPoints = [
+      ...otContext.flatMap((ot) => ot.rings.flatMap((ring) => stripClosingPoint(ring))),
       ...(teeData?.rings?.flatMap((ring) => stripClosingPoint(ring)) ?? []),
       ...primaryRing,
       ...neighbors.flatMap((neighbor) => stripClosingPoint(neighbor.rings?.[0] ?? [])),
@@ -420,7 +471,7 @@ export default function Home({ initialKaek }: HomeProps) {
     const xs = allPoints.map((p) => p.x);
     const ys = allPoints.map((p) => p.y);
     return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-  }, [primaryRing, neighbors]);
+  }, [primaryRing, neighbors, teeData, otContext]);
 
   useEffect(() => {
     if (initialKaek) {
@@ -523,6 +574,8 @@ export default function Home({ initialKaek }: HomeProps) {
       // Fetch TEE data for Ο.Τ.
       const tee = await fetchTEEData(result.rings);
       setTeeData(tee);
+      const nearbyOTs = tee?.rings?.length && tee?.otNumber ? await fetchNearbyOTPolygons(tee.rings, tee.otNumber) : [];
+      setOtContext(nearbyOTs);
       
       // Prefer all parcels inside OT, fallback to neighboring parcels
       const parcelList = tee?.rings?.length
