@@ -524,7 +524,15 @@ export default function Home({ initialKaek }: HomeProps) {
       const parcelList = tee?.rings?.length
         ? await fetchParcelsInOT(tee.rings, result.kaek)
         : await fetchNeighbors(result.rings, result.kaek);
-      setNeighbors(parcelList);
+      const filteredParcels = parcelList.filter((item) => {
+        const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
+        const category = mainUseInfo?.category || "";
+        const subcategory = mainUseInfo?.subcategory || "";
+        const isRoad = category.includes("ΟΔΙΚΟ") || subcategory.includes("ΟΔΙΚΟ") || item.mainUse === "5100";
+        const isHuge = (item.area ?? 0) > 5000;
+        return !isRoad && !isHuge;
+      });
+      setNeighbors(filteredParcels);
     } catch (error) {
       setMessage("Lookup failed.");
     } finally {
@@ -586,10 +594,10 @@ export default function Home({ initialKaek }: HomeProps) {
         </div>
 
         {parcel ? (
-          <div className="mt-10 grid gap-8 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="mt-10 space-y-8">
             <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Shape</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Οικόπεδο</h2>
                 <button
                   type="button"
                   className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-700"
@@ -599,42 +607,12 @@ export default function Home({ initialKaek }: HomeProps) {
                 </button>
               </div>
 
-              <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+              <svg viewBox="0 0 320 320" className="w-full max-w-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
-                {blockBounds && teeData?.rings?.map((ring, index) => {
-                  const otPath = pathFromRingWithBounds(ring, blockBounds);
-                  return <path key={`ot-${index}`} d={otPath} fill="rgba(59,130,246,0.04)" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="4 4" />;
-                })}
-                {blockBounds && neighbors.map((neighbor, index) => {
-                  const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
-                  if (!ring.length) return null;
-                  const nPath = pathFromRingWithBounds(ring, blockBounds);
-                  const c = projectPoint(centroid(ring), blockBounds);
-                  return (
-                    <g key={neighbor.kaek}>
-                      <path
-                        d={nPath}
-                        fill="rgba(148,163,184,0.15)"
-                        stroke="#94a3b8"
-                        strokeWidth="1.5"
-                        className="cursor-pointer"
-                        onClick={() => {
-                          setQuery(neighbor.kaek);
-                          navigate(`/o/${neighbor.kaek}`);
-                          setTimeout(() => {
-                            const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
-                            button?.click();
-                          }, 10);
-                        }}
-                      />
-                      <circle cx={c.x} cy={c.y} r="11" fill="white" stroke="#94a3b8" />
-                      <text x={c.x} y={c.y + 4} fontSize="11" textAnchor="middle" fill="#475569">{index + 1}</text>
-                    </g>
-                  );
-                })}
-                {blockBounds ? <path d={pathFromRingWithBounds(primaryRing, blockBounds)} fill="rgba(17,24,39,0.08)" stroke="#111827" strokeWidth="2.2" /> : <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />}
-                {(blockBounds ? primaryRing : primaryRing).map((point, index) => {
-                  const p = blockBounds ? projectPoint(point, blockBounds) : createSvgProjector(primaryRing)(point);
+                <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
+                {primaryRing.map((point, index) => {
+                  const project = createSvgProjector(primaryRing);
+                  const p = project(point);
                   const dx = index % 2 === 0 ? 8 : -18;
                   const dy = index % 2 === 0 ? -8 : 16;
                   return (
@@ -763,6 +741,48 @@ export default function Home({ initialKaek }: HomeProps) {
                   </button>
                 </div>
               </div>
+
+              {/* OT Map */}
+              {neighbors.length > 0 && blockBounds ? (
+                <div className="mt-6">
+                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Χάρτης Ο.Τ.</h3>
+                  <svg viewBox="0 0 320 320" className="w-full max-w-[640px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+                    <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
+                    {teeData?.rings?.map((ring, index) => {
+                      const otPath = pathFromRingWithBounds(ring, blockBounds);
+                      return <path key={`ot-${index}`} d={otPath} fill="rgba(59,130,246,0.04)" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="4 4" />;
+                    })}
+                    {neighbors.map((neighbor, index) => {
+                      const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
+                      if (!ring.length) return null;
+                      const nPath = pathFromRingWithBounds(ring, blockBounds);
+                      const c = projectPoint(centroid(ring), blockBounds);
+                      return (
+                        <g key={neighbor.kaek}>
+                          <path
+                            d={nPath}
+                            fill="rgba(148,163,184,0.15)"
+                            stroke="#94a3b8"
+                            strokeWidth="1.5"
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setQuery(neighbor.kaek);
+                              navigate(`/o/${neighbor.kaek}`);
+                              setTimeout(() => {
+                                const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
+                                button?.click();
+                              }, 10);
+                            }}
+                          />
+                          <circle cx={c.x} cy={c.y} r="11" fill="white" stroke="#94a3b8" />
+                          <text x={c.x} y={c.y + 4} fontSize="11" textAnchor="middle" fill="#475569">{index + 1}</text>
+                        </g>
+                      );
+                    })}
+                    <path d={pathFromRingWithBounds(primaryRing, blockBounds)} fill="rgba(17,24,39,0.08)" stroke="#111827" strokeWidth="2.2" />
+                  </svg>
+                </div>
+              ) : null}
 
               {/* Neighboring Parcels */}
               {neighbors.length > 0 && (
