@@ -1,6 +1,7 @@
 import { Search, Download, Copy, Check } from "lucide-react";
 import { useMemo, useState } from "react";
 import otaOfficeMap from "@shared/ota-office-map.json";
+import mainUseMap from "@shared/main-use-map.json";
 
 type Point = { x: number; y: number };
 type ParcelData = {
@@ -169,6 +170,7 @@ export default function Home() {
     if (!parcel) return [] as Array<[string, string]>;
     const attrs = parcel.raw;
     const otaInfo = (otaOfficeMap as Record<string, { otaCode: string; nomos: string; ota: string; cadastralOffice: string; raw: string }>)[parcel.otaCode];
+    const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string; label: string }>)[parcel.mainUse];
     return [
       ["KAEK", parcel.kaek],
       ["Κωδικός ΟΤΑ", parcel.otaCode || "—"],
@@ -177,7 +179,7 @@ export default function Home() {
       ["Κτηματολογικό Γραφείο", otaInfo?.cadastralOffice || "—"],
       ["Εμβαδό", parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—"],
       ["Περίμετρος", parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—"],
-      ["Κύρια χρήση", parcel.mainUse || "—"],
+      ["Κύρια χρήση", mainUseInfo?.label || (parcel.mainUse || "—")],
       ["Περιγραφή", parcel.description || "—"],
       ["ΟΤΑ / link", parcel.link || "—"],
       ["PROP_VERT", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
