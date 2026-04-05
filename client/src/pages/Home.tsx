@@ -1,9 +1,11 @@
 import { Search, Download, Copy, Check } from "lucide-react";
 import { useMemo, useState } from "react";
+import otaOfficeMap from "@shared/ota-office-map.json";
 
 type Point = { x: number; y: number };
 type ParcelData = {
   kaek: string;
+  otaCode: string;
   area: number | null;
   perimeter: number | null;
   mainUse: string;
@@ -136,8 +138,10 @@ async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
   const feature = data?.features?.[0];
   if (!feature?.geometry?.rings?.length) return null;
 
+  const kaekValue = feature.attributes?.KAEK || normalized;
   return {
-    kaek: feature.attributes?.KAEK || normalized,
+    kaek: kaekValue,
+    otaCode: String(kaekValue).slice(0, 5),
     area: feature.attributes?.AREA ?? null,
     perimeter: feature.attributes?.PERIMETER ?? null,
     mainUse: feature.attributes?.MAIN_USE || "",
@@ -164,8 +168,13 @@ export default function Home() {
   const visibleRows = useMemo(() => {
     if (!parcel) return [] as Array<[string, string]>;
     const attrs = parcel.raw;
+    const otaInfo = (otaOfficeMap as Record<string, { otaCode: string; nomos: string; ota: string; cadastralOffice: string; raw: string }>)[parcel.otaCode];
     return [
       ["KAEK", parcel.kaek],
+      ["Κωδικός ΟΤΑ", parcel.otaCode || "—"],
+      ["Νομός", otaInfo?.nomos || "—"],
+      ["ΟΤΑ", otaInfo?.ota || "—"],
+      ["Κτηματολογικό Γραφείο", otaInfo?.cadastralOffice || "—"],
       ["Εμβαδό", parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—"],
       ["Περίμετρος", parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—"],
       ["Κύρια χρήση", parcel.mainUse || "—"],
