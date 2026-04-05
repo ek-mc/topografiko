@@ -496,8 +496,7 @@ export default function Home({ initialKaek }: HomeProps) {
     const rows: RowInfo[] = [
       { label: "KAEK", value: parcel.kaek, source: "Κτηματολόγιο", sourceDetail: "Επίσημο layer γεωτεμαχίων Κτηματολογίου", primary: true },
       { label: "Κωδικός ΟΤΑ", value: parcel.otaCode || "—", source: "Σύνθεση", sourceDetail: "Εξαγωγή από KAEK + local enrichment" },
-      { label: "Νομός", value: otaInfo?.nomos || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων", primary: true },
-      { label: "ΟΤΑ", value: otaInfo?.ota || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
+            { label: "ΟΤΑ", value: otaInfo?.ota || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
       { label: "Κτηματολογικό Γραφείο", value: otaInfo?.cadastralOffice || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
       { label: "Εμβαδό", value: parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—", source: "Κτηματολόγιο", sourceDetail: "AREA από ArcGIS service", primary: true },
       { label: "Περίμετρος", value: parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—", source: "Κτηματολόγιο", sourceDetail: "PERIMETER από ArcGIS service", primary: true },
@@ -519,8 +518,7 @@ export default function Home({ initialKaek }: HomeProps) {
         { label: "Οικοδομικό Τετράγωνο (Ο.Τ.)", value: teeData.otNumber || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI", primary: true },
         { label: "ΦΕΚ", value: teeData.fek || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
         { label: "Τύπος Έγκρισης", value: teeData.apofEidos || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI" },
-        { label: "Καλλικρατικός Δήμος", value: teeData.municipality || "—", source: "TEE", sourceDetail: "Πολεοδομική πληροφορία TEE / SDI", primary: true },
-      );
+              );
     }
     
     rows.push(
@@ -657,7 +655,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Οικόπεδο</h2>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-700"
+                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-700" onClick={() => navigate(`/o/${parcel.kaek}/export`)}
                 >
                   <Download className="h-4 w-4" />
                   Export
