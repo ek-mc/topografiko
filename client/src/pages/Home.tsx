@@ -89,21 +89,31 @@ function boundsFromRing(points: Point[]) {
   };
 }
 
+function createSvgProjector(points: Point[]) {
+  const b = boundsFromRing(points);
+  const width = Math.max(1e-9, b.maxX - b.minX);
+  const height = Math.max(1e-9, b.maxY - b.minY);
+  const pad = 28;
+  const size = 320;
+  const scale = Math.min((size - pad * 2) / width, (size - pad * 2) / height);
+  const offsetX = (size - width * scale) / 2;
+  const offsetY = (size - height * scale) / 2;
+
+  return (point: Point) => ({
+    x: offsetX + (point.x - b.minX) * scale,
+    y: size - (offsetY + (point.y - b.minY) * scale),
+  });
+}
+
 function shapePath(points: Point[]) {
   const usable = normalizeRing(points);
   if (!usable.length) return "";
-  const b = boundsFromRing(points);
-  const width = Math.max(1, b.maxX - b.minX);
-  const height = Math.max(1, b.maxY - b.minY);
-  const pad = 18;
-  const size = 320;
-  const scale = Math.min((size - pad * 2) / width, (size - pad * 2) / height);
+  const project = createSvgProjector(usable);
 
   return usable
     .map((point, index) => {
-      const sx = pad + (point.x - b.minX) * scale;
-      const sy = size - pad - (point.y - b.minY) * scale;
-      return `${index === 0 ? "M" : "L"}${sx.toFixed(2)},${sy.toFixed(2)}`;
+      const p = project(point);
+      return `${index === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`;
     })
     .join(" ") + " Z";
 }
@@ -239,21 +249,19 @@ export default function Home() {
                 </button>
               </div>
 
-              <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50">
-                <path d={path} fill="rgba(17,24,39,0.08)" stroke="#111827" strokeWidth="2" />
-                {(primaryRing.length ? primaryRing : []).map((point, index) => {
-                  const b = boundsFromRing(primaryRing);
-                  const width = Math.max(1, b.maxX - b.minX);
-                  const height = Math.max(1, b.maxY - b.minY);
-                  const pad = 18;
-                  const size = 320;
-                  const scale = Math.min((size - pad * 2) / width, (size - pad * 2) / height);
-                  const sx = pad + (point.x - b.minX) * scale;
-                  const sy = size - pad - (point.y - b.minY) * scale;
+              <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+                <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
+                <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
+                {primaryRing.map((point, index) => {
+                  const project = createSvgProjector(primaryRing);
+                  const p = project(point);
+                  const dx = index % 2 === 0 ? 8 : -18;
+                  const dy = index % 2 === 0 ? -8 : 16;
                   return (
                     <g key={index}>
-                      <circle cx={sx} cy={sy} r="3.2" fill="#111827" />
-                      <text x={sx + 6} y={sy - 6} fontSize="12" fill="#111827">{greekLabel(index)}</text>
+                      <circle cx={p.x} cy={p.y} r="3.6" fill="#111827" />
+                      <rect x={p.x + dx - 4} y={p.y + dy - 14} width="18" height="18" rx="4" fill="white" stroke="#d4d4d8" />
+                      <text x={p.x + dx + 5} y={p.y + dy - 2} fontSize="11" textAnchor="middle" fill="#111827">{greekLabel(index)}</text>
                     </g>
                   );
                 })}
