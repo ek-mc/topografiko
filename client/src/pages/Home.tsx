@@ -21,16 +21,57 @@ function formatNumber(value: number | null, digits = 2) {
   }).format(value);
 }
 
-function edgeLengths(points: Point[]) {
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function distanceMeters(a: Point, b: Point) {
+  const R = 6371000;
+  const lat1 = toRadians(a.y);
+  const lat2 = toRadians(b.y);
+  const dLat = toRadians(b.y - a.y);
+  const dLon = toRadians(b.x - a.x);
+
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function greekLabel(index: number) {
+  const letters = ["Α", "Β", "Γ", "Δ", "Ε", "Ζ", "Η", "Θ", "Ι", "Κ", "Λ", "Μ", "Ν", "Ξ", "Ο", "Π", "Ρ", "Σ", "Τ", "Υ", "Φ", "Χ", "Ψ", "Ω"];
+  return letters[index] || `P${index + 1}`;
+}
+
+function normalizeRing(points: Point[]) {
   const usable = points.length > 1 ? points.slice(0, -1) : points;
-  const result: { index: number; length: number }[] = [];
+  if (!usable.length) return [];
+
+  let startIndex = 0;
+  for (let i = 1; i < usable.length; i++) {
+    const current = usable[i];
+    const best = usable[startIndex];
+    if (current.y > best.y || (current.y === best.y && current.x > best.x)) {
+      startIndex = i;
+    }
+  }
+
+  const rotated = [...usable.slice(startIndex), ...usable.slice(0, startIndex)];
+  return rotated;
+}
+
+function edgeLengths(points: Point[]) {
+  const usable = normalizeRing(points);
+  const result: { label: string; length: number }[] = [];
 
   for (let i = 0; i < usable.length; i++) {
     const a = usable[i];
     const b = usable[(i + 1) % usable.length];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    result.push({ index: i + 1, length: Math.sqrt(dx * dx + dy * dy) });
+    result.push({
+      label: `${greekLabel(i)}${greekLabel((i + 1) % usable.length)}`,
+      length: distanceMeters(a, b),
+    });
   }
 
   return result;
@@ -49,7 +90,7 @@ function boundsFromRing(points: Point[]) {
 }
 
 function shapePath(points: Point[]) {
-  const usable = points.length > 1 ? points.slice(0, -1) : points;
+  const usable = normalizeRing(points);
   if (!usable.length) return "";
   const b = boundsFromRing(points);
   const width = Math.max(1, b.maxX - b.minX);
@@ -105,7 +146,7 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [parcel, setParcel] = useState<ParcelData | null>(null);
 
-  const primaryRing = parcel?.rings?.[0] ?? [];
+  const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
   const lengths = useMemo(() => (primaryRing.length ? edgeLengths(primaryRing) : []), [primaryRing]);
 
@@ -121,7 +162,7 @@ export default function Home() {
       ["ΟΤΑ / link", parcel.link || "—"],
       ["PROP_VERT", attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—"],
       ["PROP_HOR", attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—"],
-      ["PERCENTAGE", attrs.PERCENTAGE != null ? String(attrs.PERCENTAGE) : "—"],
+      ["Ποσοστό επί της ιδιοκτησίας", attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—"],
     ];
   }, [parcel]);
 
@@ -200,6 +241,22 @@ export default function Home() {
 
               <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50">
                 <path d={path} fill="rgba(17,24,39,0.08)" stroke="#111827" strokeWidth="2" />
+                {(primaryRing.length ? primaryRing : []).map((point, index) => {
+                  const b = boundsFromRing(primaryRing);
+                  const width = Math.max(1, b.maxX - b.minX);
+                  const height = Math.max(1, b.maxY - b.minY);
+                  const pad = 18;
+                  const size = 320;
+                  const scale = Math.min((size - pad * 2) / width, (size - pad * 2) / height);
+                  const sx = pad + (point.x - b.minX) * scale;
+                  const sy = size - pad - (point.y - b.minY) * scale;
+                  return (
+                    <g key={index}>
+                      <circle cx={sx} cy={sy} r="3.2" fill="#111827" />
+                      <text x={sx + 6} y={sy - 6} fontSize="12" fill="#111827">{greekLabel(index)}</text>
+                    </g>
+                  );
+                })}
               </svg>
             </section>
 
@@ -232,9 +289,9 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(primaryRing.length > 1 ? primaryRing.slice(0, -1) : primaryRing).map((point, index) => (
+                        {primaryRing.map((point, index) => (
                           <tr key={index} className="border-t border-neutral-200">
-                            <td className="px-3 py-2">{index + 1}</td>
+                            <td className="px-3 py-2">{greekLabel(index)}</td>
                             <td className="px-3 py-2">{point.x.toFixed(6)}</td>
                             <td className="px-3 py-2">{point.y.toFixed(6)}</td>
                           </tr>
@@ -250,15 +307,15 @@ export default function Home() {
                     <table className="w-full border-collapse text-sm">
                       <thead>
                         <tr className="bg-neutral-50 text-neutral-600">
-                          <th className="px-3 py-2 text-left font-medium">Edge</th>
+                          <th className="px-3 py-2 text-left font-medium">Πλευρά</th>
                           <th className="px-3 py-2 text-left font-medium">Length</th>
                         </tr>
                       </thead>
                       <tbody>
                         {lengths.map((edge) => (
-                          <tr key={edge.index} className="border-t border-neutral-200">
-                            <td className="px-3 py-2">{edge.index}</td>
-                            <td className="px-3 py-2">{formatNumber(edge.length, 2)}°</td>
+                          <tr key={edge.label} className="border-t border-neutral-200">
+                            <td className="px-3 py-2">{edge.label}</td>
+                            <td className="px-3 py-2">{formatNumber(edge.length, 2)} m</td>
                           </tr>
                         ))}
                       </tbody>
