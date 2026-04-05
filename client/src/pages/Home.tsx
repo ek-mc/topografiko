@@ -451,6 +451,7 @@ export default function Home({ initialKaek }: HomeProps) {
   const [message, setMessage] = useState("");
   const [parcel, setParcel] = useState<ParcelData | null>(null);
   const [teeData, setTeeData] = useState<TEEData | null>(null);
+  const [teeCandidates, setTeeCandidates] = useState<TEEData[]>([]);
   const [neighbors, setNeighbors] = useState<NeighborParcel[]>([]);
   const [otContext, setOtContext] = useState<OTContextPolygon[]>([]);
   const [copiedKey, setCopiedKey] = useState("");
@@ -557,6 +558,7 @@ export default function Home({ initialKaek }: HomeProps) {
     setMessage("Searching…");
     setParcel(null);
     setTeeData(null);
+    setTeeCandidates([]);
     setNeighbors([]);
 
     try {
@@ -569,13 +571,16 @@ export default function Home({ initialKaek }: HomeProps) {
       setMessage("");
       navigate(`/o/${result.kaek}`, { replace: true });
       
-      // Fetch TEE data for Ο.Τ.
-      const tee = await fetchTEEData(result.rings);
+      // Fetch TEE OT candidates
+      const { fetchTEECandidates } = await import("@/lib/topografiko");
+      const candidates = await fetchTEECandidates(result.rings);
+      setTeeCandidates(candidates);
+      const tee = candidates[0] || null;
       setTeeData(tee);
       const nearbyOTs = tee?.rings?.length && tee?.otNumber ? await fetchNearbyOTPolygons(tee.rings, tee.otNumber) : [];
       setOtContext(nearbyOTs);
       
-      // Prefer all parcels inside OT, fallback to neighboring parcels
+      // Prefer all parcels inside first OT candidate, fallback to neighboring parcels
       const parcelList = tee?.rings?.length
         ? await fetchParcelsInOT(tee.rings, result.kaek)
         : await fetchNeighbors(result.rings, result.kaek);
@@ -662,7 +667,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 </button>
               </div>
 
-              <svg viewBox="0 0 320 320" className="w-full max-h-[520px]">
+              <svg viewBox="0 0 320 320" className={`w-full ${teeCandidates.length > 1 ? "max-h-[720px]" : "max-h-[520px]"}`}>
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                 <path d={path} fill="rgba(59,130,246,0.06)" stroke="#60a5fa" strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
@@ -809,15 +814,17 @@ export default function Home({ initialKaek }: HomeProps) {
               </div>
 
               {/* OT Map */}
-              {neighbors.length > 0 && blockBounds ? (
+              {(neighbors.length > 0 || teeCandidates.length > 1) && blockBounds ? (
                 <div className="mt-6">
                   <h3 className="mb-2 text-sm font-semibold text-neutral-700">Χάρτης Ο.Τ.</h3>
+                  {teeCandidates.length > 1 ? <p className="mb-2 text-xs text-neutral-500">Βρέθηκαν πολλαπλά Ο.Τ. candidates: {teeCandidates.map((c) => c.otNumber).filter(Boolean).join(", ")}</p> : null}
                   <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                     <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
-                    {teeData?.rings?.map((ring, index) => {
+                    {teeCandidates.map((candidate, candidateIndex) => candidate.rings.map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
-                      return <path key={`ot-${index}`} d={otPath} fill="rgba(59,130,246,0.04)" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="4 4" />;
-                    })}
+                      const isPrimary = candidateIndex === 0;
+                      return <path key={`ot-${candidateIndex}-${index}`} d={otPath} fill={isPrimary ? "rgba(59,130,246,0.04)" : "rgba(107,114,128,0.03)"} stroke={isPrimary ? "#60a5fa" : "#9ca3af"} strokeWidth={isPrimary ? "1.5" : "1.1"} strokeDasharray={isPrimary ? "4 4" : "3 5"} />;
+                    }))}
                     {neighbors.map((neighbor, index) => {
                       const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
                       if (!ring.length) return null;

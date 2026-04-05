@@ -21,6 +21,8 @@ export type TEEData = {
   rings: Point[][];
 };
 
+export type TEECandidate = TEEData;
+
 export type NeighborParcel = {
   kaek: string;
   mainUse: string;
@@ -124,37 +126,46 @@ export function transformFromGGRS87(x: number, y: number): [number, number] {
 }
 
 export async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
-  if (!rings?.[0]?.length) return null;
-  const center = centroidOfRing(rings[0]);
-  const [x, y] = transformToWebMercator(center.x, center.y);
-  const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 102100 } });
+  const candidates = await fetchTEECandidates(rings);
+  return candidates[0] || null;
+}
+
+export async function fetchTEECandidates(rings: Point[][]): Promise<TEECandidate[]> {
+  if (!rings?.[0]?.length) return [];
+  const points = rings[0];
+  const lons = points.map((p) => p.x);
+  const lats = points.map((p) => p.y);
+  const [xmin, ymin] = transformToGGRS87(Math.min(...lons), Math.min(...lats));
+  const [xmax, ymax] = transformToGGRS87(Math.max(...lons), Math.max(...lats));
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 2100 } });
   const params = new URLSearchParams({
     f: "json",
     returnGeometry: "true",
     spatialRel: "esriSpatialRelIntersects",
     geometry,
-    geometryType: "esriGeometryPoint",
-    inSR: "102100",
+    geometryType: "esriGeometryEnvelope",
+    inSR: "2100",
     outFields: "OBJECTID,FEK,OT_NUM,APOF_EIDOS,KALL_DHM_NAME",
-    outSR: "102100",
+    outSR: "2100",
     layer: JSON.stringify({ source: { type: "mapLayer", mapLayerId: 6 } }),
   });
   const url = `https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/dynamicLayer/query?${params.toString()}`;
   const response = await fetch(url);
   const data = await response.json();
-  const feature = data?.features?.[0];
-  if (!feature) return null;
-  const attrs = feature.attributes;
-  return {
-    otNumber: attrs.OT_NUM || "",
-    fek: attrs.FEK || "",
-    apofEidos: attrs.APOF_EIDOS || "",
-    municipality: attrs.KALL_DHM_NAME || "",
-    rings: (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => {
-      const [lon, lat] = transformFromWebMercator(point[0], point[1]);
-      return { x: lon, y: lat };
-    })),
-  };
+  const features = data?.features || [];
+  return features.map((feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }) => {
+    const attrs = feature.attributes || {};
+    return {
+      otNumber: String(attrs.OT_NUM || ""),
+      fek: String(attrs.FEK || ""),
+      apofEidos: String(attrs.APOF_EIDOS || ""),
+      municipality: String(attrs.KALL_DHM_NAME || ""),
+      rings: (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => {
+        const [lon, lat] = transformFromGGRS87(point[0], point[1]);
+        return { x: lon, y: lat };
+      })),
+    } satisfies TEECandidate;
+  });
 }
 
 export async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string): Promise<NeighborParcel[]> {
