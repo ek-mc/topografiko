@@ -847,7 +847,24 @@ export default function Home({ initialKaek }: HomeProps) {
                               }, 10);
                             }}
                           />
-                          <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#334155">{neighbor.kaek}</text>
+                          <text
+                            x={c.x}
+                            y={c.y + 4}
+                            fontSize="7.5"
+                            textAnchor="middle"
+                            fill="#334155"
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setQuery(neighbor.kaek);
+                              navigate(`/o/${neighbor.kaek}`);
+                              setTimeout(() => {
+                                const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
+                                button?.click();
+                              }, 10);
+                            }}
+                          >
+                            {neighbor.kaek}
+                          </text>
                         </g>
                       );
                     })}
@@ -864,7 +881,22 @@ export default function Home({ initialKaek }: HomeProps) {
                     />
                     {(() => {
                       const c = projectPoint(centroid(primaryRing), blockBounds);
-                      return <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#1e3a8a">{parcel.kaek}</text>;
+                      return (
+                        <text
+                          x={c.x}
+                          y={c.y + 4}
+                          fontSize="7.5"
+                          textAnchor="middle"
+                          fill="#1e3a8a"
+                          className="cursor-pointer"
+                          onClick={() => {
+                            setQuery(parcel.kaek);
+                            navigate(`/o/${parcel.kaek}`);
+                          }}
+                        >
+                          {parcel.kaek}
+                        </text>
+                      );
                     })()}
                   </svg>
                 </div>
