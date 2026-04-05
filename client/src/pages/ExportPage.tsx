@@ -7,7 +7,7 @@ import {
   downloadText,
   fetchParcelByKaek,
   fetchParcelsInOT,
-  fetchTEEData,
+  fetchTEECandidates,
   NeighborParcel,
   ParcelData,
   pathFromRingWithBounds,
@@ -26,6 +26,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const navigate = useNavigate();
   const [parcel, setParcel] = useState<ParcelData | null>(null);
   const [teeData, setTeeData] = useState<TEEData | null>(null);
+  const [teeCandidates, setTeeCandidates] = useState<TEEData[]>([]);
   const [otParcels, setOtParcels] = useState<NeighborParcel[]>([]);
   const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,11 +39,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       const result = await fetchParcelByKaek(initialKaek);
       setParcel(result);
       if (result) {
-        const tee = await fetchTEEData(result.rings);
+        const candidates = await fetchTEECandidates(result.rings);
+        setTeeCandidates(candidates);
+        const tee = candidates[0] || null;
         setTeeData(tee);
-        if (tee?.rings?.length) {
-          const block = await fetchParcelsInOT(tee.rings, result.kaek);
-          const filtered = block.filter((item) => {
+        if (candidates.length) {
+          const blocks = await Promise.all(candidates.map((candidate) => fetchParcelsInOT(candidate.rings)));
+          const merged = Array.from(new Map(blocks.flat().map((item) => [item.kaek, item])).values()).filter((item) => item.kaek !== result.kaek);
+          const filtered = merged.filter((item) => {
             const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
             const category = info?.category || "";
             const subcategory = info?.subcategory || "";
@@ -107,7 +111,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
             {previewBounds ? (
               <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
-                {teeData?.rings?.map((ring, index) => (
+                {teeCandidates.flatMap((candidate) => candidate.rings).map((ring, index) => (
                   <path key={index} d={pathFromRingWithBounds(ring, previewBounds)} fill="rgba(59,130,246,0.04)" stroke="#cbd5e1" strokeWidth="1.2" />
                 ))}
                 {!wholeBlock ? contextParcels.map((item) => {
