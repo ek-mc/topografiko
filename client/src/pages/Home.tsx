@@ -494,8 +494,9 @@ export default function Home({ initialKaek }: HomeProps) {
     
     const rows: RowInfo[] = [
       { label: "KAEK", value: parcel.kaek, source: "Κτηματολόγιο", sourceDetail: "Επίσημο layer γεωτεμαχίων Κτηματολογίου", primary: true },
+      { label: "Καλλικρατικός Δήμος", value: teeData?.municipality || otaInfo?.ota || "—", source: teeData?.municipality ? "TEE" : "Local JSON", sourceDetail: teeData?.municipality ? "Πολεοδομική πληροφορία TEE / SDI" : "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων", primary: true },
       { label: "Κωδικός ΟΤΑ", value: parcel.otaCode || "—", source: "Σύνθεση", sourceDetail: "Εξαγωγή από KAEK + local enrichment" },
-            { label: "ΟΤΑ", value: otaInfo?.ota || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
+      { label: "ΟΤΑ", value: otaInfo?.ota || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
       { label: "Κτηματολογικό Γραφείο", value: otaInfo?.cadastralOffice || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping από PDF ΟΤΑ/Κτηματολογικών Γραφείων" },
       { label: "Εμβαδό", value: parcel.area != null ? `${formatNumber(parcel.area, 2)} m²` : "—", source: "Κτηματολόγιο", sourceDetail: "AREA από ArcGIS service", primary: true },
       { label: "Περίμετρος", value: parcel.perimeter != null ? `${formatNumber(parcel.perimeter, 2)} m` : "—", source: "Κτηματολόγιο", sourceDetail: "PERIMETER από ArcGIS service", primary: true },
