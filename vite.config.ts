@@ -18,6 +18,18 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/index.js",
+        chunkFileNames: "assets/[name].js",
+        assetFileNames: (assetInfo) => {
+          const name = assetInfo.names?.[0] || assetInfo.name || "asset";
+          const ext = name.split('.').pop() || 'bin';
+          if (ext === 'css') return 'assets/index.css';
+          return `assets/${name}`;
+        },
+      },
+    },
   },
   server: {
     port: 3000,

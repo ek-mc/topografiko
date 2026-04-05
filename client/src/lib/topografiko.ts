@@ -168,7 +168,7 @@ export async function fetchTEECandidates(rings: Point[][]): Promise<TEECandidate
   });
 }
 
-export async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string): Promise<NeighborParcel[]> {
+export async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string | undefined): Promise<NeighborParcel[]> {
   const geometry = JSON.stringify({
     rings: otRings.map((ring) => ring.map((p) => [p.x, p.y])),
     spatialReference: { wkid: 4326 },

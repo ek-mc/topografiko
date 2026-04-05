@@ -350,7 +350,7 @@ async function fetchNearbyOTPolygons(rings: Point[][], currentOt: string): Promi
   }
 }
 
-async function fetchParcelsInOT(otRings: Point[][], currentKaek: string): Promise<NeighborParcel[]> {
+async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string): Promise<NeighborParcel[]> {
   if (!otRings?.[0]?.length) return [];
   const geometry = JSON.stringify({
     rings: otRings.map((ring) => ring.map((p) => [p.x, p.y])),
@@ -580,9 +580,14 @@ export default function Home({ initialKaek }: HomeProps) {
       const nearbyOTs = tee?.rings?.length && tee?.otNumber ? await fetchNearbyOTPolygons(tee.rings, tee.otNumber) : [];
       setOtContext(nearbyOTs);
       
-      // Prefer all parcels inside first OT candidate, fallback to neighboring parcels
-      const parcelList = tee?.rings?.length
-        ? await fetchParcelsInOT(tee.rings, result.kaek)
+      // If multiple OT candidates exist, gather parcels from all of them
+      const candidateParcelLists = candidates.length
+        ? await Promise.all(candidates.map((candidate) => fetchParcelsInOT(candidate.rings, undefined)))
+        : [];
+      const candidateParcels = candidateParcelLists.flat();
+      const dedupedCandidateParcels = Array.from(new Map(candidateParcels.map((item) => [item.kaek, item])).values());
+      const parcelList = candidates.length
+        ? dedupedCandidateParcels.filter((item) => item.kaek !== result.kaek)
         : await fetchNeighbors(result.rings, result.kaek);
       const filteredParcels = parcelList.filter((item) => {
         const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
@@ -817,8 +822,7 @@ export default function Home({ initialKaek }: HomeProps) {
               {(neighbors.length > 0 || teeCandidates.length > 1) && blockBounds ? (
                 <div className="mt-6">
                   <h3 className="mb-2 text-sm font-semibold text-neutral-700">Χάρτης Ο.Τ.</h3>
-                  {teeCandidates.length > 1 ? <p className="mb-2 text-xs text-neutral-500">Βρέθηκαν πολλαπλά Ο.Τ. candidates: {teeCandidates.map((c) => c.otNumber).filter(Boolean).join(", ")}</p> : null}
-                  <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+                                    <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                     <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                     {teeCandidates.map((candidate, candidateIndex) => candidate.rings.map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
