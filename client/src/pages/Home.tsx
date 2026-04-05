@@ -1,4 +1,4 @@
-import { Search, Download, Copy, Check, House } from "lucide-react";
+import { Search, Download, Copy, Check, House, Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import proj4 from "proj4";
@@ -320,6 +320,7 @@ export default function Home({ initialKaek }: HomeProps) {
   const [teeData, setTeeData] = useState<TEEData | null>(null);
   const [neighbors, setNeighbors] = useState<NeighborParcel[]>([]);
   const [copiedKey, setCopiedKey] = useState("");
+  const [openInfoKey, setOpenInfoKey] = useState("");
 
   const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
@@ -536,22 +537,31 @@ export default function Home({ initialKaek }: HomeProps) {
                           <td className="px-4 py-3 text-neutral-900">
                             <div className="flex items-center justify-between gap-3">
                               <span>{value}</span>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="inline-flex items-center rounded-full border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-600"
-                                  title={sourceDetail || source}
+                              <div className="relative flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenInfoKey((current) => (current === copyKey ? "" : copyKey))}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                                  title={`Info for ${label}`}
+                                  aria-label={`Info for ${label}`}
                                 >
-                                  {source}
-                                </span>
-                              <button
-                                type="button"
-                                onClick={() => copyValue(copyKey, value)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"
-                                title={`Copy ${label}`}
-                                aria-label={`Copy ${label}`}
-                              >
-                                {copiedKey === copyKey ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                              </button>
+                                  <Info className="h-4 w-4" />
+                                </button>
+                                {openInfoKey === copyKey ? (
+                                  <div className="absolute right-20 top-10 z-10 w-56 rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-600 shadow-lg">
+                                    <div className="font-semibold text-neutral-800">Πηγή: {source}</div>
+                                    <div className="mt-1">{sourceDetail || source}</div>
+                                  </div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => copyValue(copyKey, value)}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                                  title={`Copy ${label}`}
+                                  aria-label={`Copy ${label}`}
+                                >
+                                  {copiedKey === copyKey ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                                </button>
                               </div>
                             </div>
                           </td>
