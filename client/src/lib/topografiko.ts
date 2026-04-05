@@ -247,7 +247,10 @@ export function toDXF(parcels: { kaek: string; rings: Point[][] }[]) {
   }).join("\n");
 
   return [
-    "0", "SECTION", "2", "HEADER", "0", "ENDSEC",
+    "0", "SECTION", "2", "HEADER",
+    "9", "$ACADVER",
+    "1", "AC1015",
+    "0", "ENDSEC",
     "0", "SECTION", "2", "TABLES", "0", "ENDSEC",
     "0", "SECTION", "2", "BLOCKS", "0", "ENDSEC",
     "0", "SECTION", "2", "ENTITIES",
