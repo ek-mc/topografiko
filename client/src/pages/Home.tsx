@@ -1,22 +1,10 @@
-import { Search, Mic } from "lucide-react";
+import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-declare global {
-  interface Window {
-    webkitSpeechRecognition?: any;
-    SpeechRecognition?: any;
-  }
-}
 
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [message, setMessage] = useState("");
-
-  const SpeechRecognitionCtor = useMemo(
-    () => window.SpeechRecognition || window.webkitSpeechRecognition || null,
-    [],
-  );
 
   const handleSubmit = () => {
     const value = query.trim();
@@ -26,40 +14,6 @@ export default function Home() {
     }
 
     setMessage(`Searching for ${value}…`);
-  };
-
-  const handleMic = () => {
-    if (!SpeechRecognitionCtor) {
-      setMessage("Speech input is not supported on this browser.");
-      return;
-    }
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.lang = "el-GR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setMessage("Listening…");
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results?.[0]?.[0]?.transcript ?? "";
-      const cleaned = String(transcript).replace(/\s+/g, "").trim();
-      setQuery(cleaned);
-      setMessage(cleaned ? `Captured: ${cleaned}` : "No speech captured.");
-    };
-
-    recognition.onerror = () => {
-      setMessage("Speech input failed.");
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.start();
   };
 
   return (
@@ -81,16 +35,6 @@ export default function Home() {
             autoCorrect="off"
             spellCheck={false}
           />
-
-          <button
-            type="button"
-            onClick={handleMic}
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-700 active:scale-[0.98]"
-            aria-label="Speech input"
-            title="Speech input"
-          >
-            <Mic className={`h-5 w-5 ${isListening ? "text-red-500" : ""}`} />
-          </button>
 
           <button
             type="button"
