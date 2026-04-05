@@ -1,5 +1,6 @@
 import { Search, Download, Copy, Check } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import proj4 from "proj4";
 import otaOfficeMap from "@shared/ota-office-map.json";
 import mainUseMap from "@shared/main-use-map.json";
@@ -296,6 +297,7 @@ interface HomeProps {
 }
 
 export default function Home({ initialKaek }: HomeProps) {
+  const navigate = useNavigate();
   const [query, setQuery] = useState(initialKaek || "");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -308,12 +310,18 @@ export default function Home({ initialKaek }: HomeProps) {
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
   const lengths = useMemo(() => (primaryRing.length ? edgeLengths(primaryRing) : []), [primaryRing]);
 
-  // Auto-search when initialKaek is provided via URL
   useEffect(() => {
-    if (initialKaek && !parcel && !loading) {
-      handleSubmit();
+    if (initialKaek) {
+      setQuery(initialKaek);
     }
   }, [initialKaek]);
+
+  // Auto-search when initialKaek is provided via URL
+  useEffect(() => {
+    if (initialKaek && query === initialKaek && !loading && parcel?.kaek !== initialKaek) {
+      handleSubmit();
+    }
+  }, [initialKaek, query, loading, parcel?.kaek]);
 
   const visibleRows = useMemo(() => {
     if (!parcel) return [] as Array<[string, string]>;
@@ -396,6 +404,7 @@ export default function Home({ initialKaek }: HomeProps) {
       }
       setParcel(result);
       setMessage("");
+      navigate(`/o/${result.kaek}`, { replace: true });
       
       // Fetch TEE data for Ο.Τ.
       const tee = await fetchTEEData(result.rings);
@@ -563,11 +572,11 @@ export default function Home({ initialKaek }: HomeProps) {
                 <h3 className="mb-2 text-sm font-semibold text-neutral-700">Shareable Link</h3>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded-lg bg-white px-3 py-2 text-sm text-neutral-600">
-                    {`${window.location.origin}/topografiko/#/o/${parcel.kaek}`}
+                    {`${window.location.origin}/topografiko/o/${parcel.kaek}`}
                   </code>
                   <button
                     type="button"
-                    onClick={() => copyValue('share-link', `${window.location.origin}/topografiko/#/o/${parcel.kaek}`)}
+                    onClick={() => copyValue('share-link', `${window.location.origin}/topografiko/o/${parcel.kaek}`)}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-100"
                     title="Copy link"
                   >
@@ -594,14 +603,14 @@ export default function Home({ initialKaek }: HomeProps) {
                           <tr key={neighbor.kaek} className="border-t border-neutral-200">
                             <td className="px-3 py-2">
                               <a
-                                href={`#/o/${neighbor.kaek}`}
+                                href={`/topografiko/o/${neighbor.kaek}`}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   setQuery(neighbor.kaek);
-                                  // Trigger search after state update
+                                  navigate(`/o/${neighbor.kaek}`);
                                   setTimeout(() => {
-                                    const event = new KeyboardEvent('keydown', { key: 'Enter' });
-                                    document.dispatchEvent(event);
+                                    const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
+                                    button?.click();
                                   }, 10);
                                 }}
                                 className="text-blue-600 hover:underline"

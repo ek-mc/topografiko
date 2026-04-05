@@ -15,6 +15,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        var url = new URL(window.location.href);
+        var redirect = url.searchParams.get('redirect');
+        if (redirect) {
+          window.history.replaceState(null, '', '/topografiko' + redirect);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
