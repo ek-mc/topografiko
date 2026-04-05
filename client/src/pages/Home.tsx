@@ -607,7 +607,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 </button>
               </div>
 
-              <svg viewBox="0 0 320 320" className="w-full max-w-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+              <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                 <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
@@ -746,7 +746,7 @@ export default function Home({ initialKaek }: HomeProps) {
               {neighbors.length > 0 && blockBounds ? (
                 <div className="mt-6">
                   <h3 className="mb-2 text-sm font-semibold text-neutral-700">Χάρτης Ο.Τ.</h3>
-                  <svg viewBox="0 0 320 320" className="w-full max-w-[640px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+                  <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                     <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                     {teeData?.rings?.map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
@@ -774,8 +774,8 @@ export default function Home({ initialKaek }: HomeProps) {
                               }, 10);
                             }}
                           />
-                          <circle cx={c.x} cy={c.y} r="11" fill="white" stroke="#94a3b8" />
-                          <text x={c.x} y={c.y + 4} fontSize="11" textAnchor="middle" fill="#475569">{index + 1}</text>
+                          <rect x={c.x - 34} y={c.y - 9} width="68" height="18" rx="6" fill="rgba(255,255,255,0.92)" stroke="#cbd5e1" />
+                          <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#334155">{neighbor.kaek}</text>
                         </g>
                       );
                     })}
@@ -814,7 +814,7 @@ export default function Home({ initialKaek }: HomeProps) {
                                 }}
                                 className="text-blue-600 hover:underline"
                               >
-                                {index + 1}. {neighbor.kaek}
+                                {neighbor.kaek}
                               </a>
                             </td>
                             <td className="px-3 py-2">{neighbor.mainUse || "—"}</td>
