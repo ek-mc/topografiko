@@ -607,7 +607,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 </button>
               </div>
 
-              <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+              <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                 <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
@@ -746,7 +746,7 @@ export default function Home({ initialKaek }: HomeProps) {
               {neighbors.length > 0 && blockBounds ? (
                 <div className="mt-6">
                   <h3 className="mb-2 text-sm font-semibold text-neutral-700">Χάρτης Ο.Τ.</h3>
-                  <svg viewBox="0 0 320 320" className="w-full rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+                  <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
                     <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                     {teeData?.rings?.map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
