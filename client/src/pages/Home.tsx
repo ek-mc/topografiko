@@ -359,8 +359,8 @@ export default function Home({ initialKaek }: HomeProps) {
     if (hasCategory) {
       rows.push(
         { label: "Κωδικός Κύριας Χρήσης", value: parcel.mainUse || "—", source: "Κτηματολόγιο", sourceDetail: "MAIN_USE code από Κτηματολόγιο" },
-        { label: "Κατηγορία Χρήσης", value: mainUseInfo?.category || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping κύριας χρήσης από PDF" },
-        { label: "Υποκατηγορία Χρήσης", value: mainUseInfo?.subcategory || "—", source: "Local JSON", sourceDetail: "Τοπικό mapping κύριας χρήσης από PDF" },
+        { label: "Κατηγορία Χρήσης", value: mainUseInfo?.category || "—", source: "Κτηματολόγιο", sourceDetail: "Ενημέρωση: 2019/01" },
+        { label: "Υποκατηγορία Χρήσης", value: mainUseInfo?.subcategory || "—", source: "Κτηματολόγιο", sourceDetail: "Ενημέρωση: 2019/01" },
       );
     } else {
       rows.push({ label: "Περιγραφή", value: parcel.description || "—", source: "Κτηματολόγιο", sourceDetail: "DESCR από ArcGIS service" });
