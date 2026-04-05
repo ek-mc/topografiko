@@ -1,4 +1,4 @@
-import { Search, Download } from "lucide-react";
+import { Search, Download, Copy, Check } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type Point = { x: number; y: number };
@@ -155,6 +155,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [parcel, setParcel] = useState<ParcelData | null>(null);
+  const [copiedKey, setCopiedKey] = useState("");
 
   const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
@@ -175,6 +176,19 @@ export default function Home() {
       ["Ποσοστό επί της ιδιοκτησίας", attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—"],
     ];
   }, [parcel]);
+
+
+
+  const copyValue = async (key: string, value: string) => {
+    if (!value || value === "—") return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey((current) => (current === key ? "" : current)), 1200);
+    } catch {
+      setMessage("Copy failed.");
+    }
+  };
 
   const handleSubmit = async () => {
     const value = query.trim();
@@ -274,12 +288,28 @@ export default function Home() {
               <div className="overflow-hidden rounded-xl border border-neutral-200">
                 <table className="w-full border-collapse text-sm">
                   <tbody>
-                    {visibleRows.map(([label, value]) => (
-                      <tr key={label} className="border-b border-neutral-200 last:border-b-0">
-                        <th className="w-52 bg-neutral-50 px-4 py-3 text-left font-medium text-neutral-600">{label}</th>
-                        <td className="px-4 py-3 text-neutral-900">{value}</td>
-                      </tr>
-                    ))}
+                    {visibleRows.map(([label, value]) => {
+                      const copyKey = `row-${label}`;
+                      return (
+                        <tr key={label} className="border-b border-neutral-200 last:border-b-0">
+                          <th className="w-52 bg-neutral-50 px-4 py-3 text-left font-medium text-neutral-600">{label}</th>
+                          <td className="px-4 py-3 text-neutral-900">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>{value}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyValue(copyKey, value)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                                title={`Copy ${label}`}
+                                aria-label={`Copy ${label}`}
+                              >
+                                {copiedKey === copyKey ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
