@@ -607,7 +607,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 </button>
               </div>
 
-              <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
+              <svg viewBox="0 0 320 320" className="w-full max-h-[520px]">
                 <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
                 <path d={path} fill="rgba(17,24,39,0.05)" stroke="#111827" strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
@@ -774,12 +774,25 @@ export default function Home({ initialKaek }: HomeProps) {
                               }, 10);
                             }}
                           />
-                          <rect x={c.x - 34} y={c.y - 9} width="68" height="18" rx="6" fill="rgba(255,255,255,0.92)" stroke="#cbd5e1" />
                           <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#334155">{neighbor.kaek}</text>
                         </g>
                       );
                     })}
-                    <path d={pathFromRingWithBounds(primaryRing, blockBounds)} fill="rgba(17,24,39,0.08)" stroke="#111827" strokeWidth="2.2" />
+                    <path
+                      d={pathFromRingWithBounds(primaryRing, blockBounds)}
+                      fill="rgba(17,24,39,0.08)"
+                      stroke="#111827"
+                      strokeWidth="2.2"
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setQuery(parcel.kaek);
+                        navigate(`/o/${parcel.kaek}`);
+                      }}
+                    />
+                    {(() => {
+                      const c = projectPoint(centroid(primaryRing), blockBounds);
+                      return <text x={c.x} y={c.y + 4} fontSize="7.5" textAnchor="middle" fill="#111827">{parcel.kaek}</text>;
+                    })()}
                   </svg>
                 </div>
               ) : null}
