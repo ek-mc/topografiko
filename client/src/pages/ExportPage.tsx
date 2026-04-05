@@ -46,6 +46,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
+  const [paperSize] = useState<"A3" | "A4">("A3");
 
   useEffect(() => {
     if (!initialKaek) return;
@@ -95,7 +96,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     const base = includeBlock ? `${parcel.kaek}-ot` : parcel.kaek;
     if (format === "geojson") downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
     if (format === "kml") downloadText(`${base}.kml`, toKML(base, parcels), "application/vnd.google-earth.kml+xml;charset=utf-8");
-    if (format === "dxf") downloadText(`${base}.dxf`, toDXF(parcels, { kaek: parcel.kaek, ot: teeData?.otNumber, municipality: teeData?.municipality, region: "(#Perifereia)", includeTitleBlock: mode === "full", coords }), "application/dxf;charset=utf-8");
+    if (format === "dxf") downloadText(`${base}.dxf`, toDXF(parcels, { kaek: parcel.kaek, ot: teeData?.otNumber, municipality: teeData?.municipality, region: "(#Perifereia)", includeTitleBlock: mode === "full", coords, paperSize, scaleDenominator: 200 }), "application/dxf;charset=utf-8");
   };
 
   const coords = useMemo(() => parcel ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({ i: i + 1, x: String(p.x), y: String(p.y) })) : [], [parcel]);
@@ -145,6 +146,20 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 ].map(({ state, setter, label }) => (
                   <button key={label} type="button" onClick={() => setter((v) => !v)} className={`rounded-full border px-3 py-1.5 ${state ? "border-blue-200 bg-blue-50 text-blue-700" : "border-neutral-300 bg-white text-neutral-500"}`}>
                     {label}
+                  </button>
+                ))}
+              </div>
+
+
+              <div className="inline-flex rounded-2xl border border-neutral-300 bg-neutral-100 p-1 text-sm">
+                {(["A3", "A4", "A2"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    disabled={size !== "A3"}
+                    className={`rounded-xl px-4 py-2 ${size === "A3" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-400"}`}
+                  >
+                    {size}
                   </button>
                 ))}
               </div>

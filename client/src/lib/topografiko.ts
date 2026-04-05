@@ -232,7 +232,7 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 
 export function toDXF(
   parcels: { kaek: string; rings: Point[][] }[],
-  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[] },
+  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[]; paperSize?: "A3" | "A4"; scaleDenominator?: number },
 ) {
   const writer = new DxfWriter();
   const projectedParcels = parcels.map((parcel) => ({
@@ -243,27 +243,57 @@ export function toDXF(
     })),
   }));
 
-  projectedParcels.forEach((parcel) => {
-    const pts = stripClosingPoint(parcel.rings[0]);
-    if (pts.length < 2) return;
-    pts.forEach((start, index) => {
-      const end = pts[(index + 1) % pts.length];
-      writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0));
-    });
-  });
+  const paperSize = meta?.paperSize || "A3";
+  const scaleDenominator = meta?.scaleDenominator || 200;
+  const paper = paperSize === "A3" ? { width: 420, height: 297 } : { width: 297, height: 210 };
+  const margin = 10;
+  const titleBlockWidth = 120;
+  const drawWin = {
+    x0: margin,
+    y0: margin,
+    x1: paper.width - titleBlockWidth - margin,
+    y1: paper.height - margin,
+  };
 
-  if (meta?.includeTitleBlock) {
-    const points = projectedParcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
-    if (points.length) {
-      const bounds = boundsFromPoints(points);
-      const width = Math.max(1, bounds.maxX - bounds.minX);
-      const height = Math.max(1, bounds.maxY - bounds.minY);
-      const boxWidth = Math.max(width * 0.9, 140);
-      const boxHeight = Math.max(height * 1.4, 160);
-      const x0 = bounds.maxX + width * 0.2;
-      const y0 = bounds.minY;
-      const x1 = x0 + boxWidth;
-      const y1 = y0 + boxHeight;
+  const points = projectedParcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
+  if (points.length) {
+    const bounds = boundsFromPoints(points);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const scale = 1000 / scaleDenominator; // meters -> mm on paper
+    const windowCenterX = (drawWin.x0 + drawWin.x1) / 2;
+    const windowCenterY = (drawWin.y0 + drawWin.y1) / 2;
+    const toSheet = (p: Point) => ({
+      x: windowCenterX + (p.x - centerX) * scale,
+      y: windowCenterY + (p.y - centerY) * scale,
+    });
+
+    // A3 frame and drawing window
+    writer.addLine(point3d(0, 0, 0), point3d(paper.width, 0, 0));
+    writer.addLine(point3d(paper.width, 0, 0), point3d(paper.width, paper.height, 0));
+    writer.addLine(point3d(paper.width, paper.height, 0), point3d(0, paper.height, 0));
+    writer.addLine(point3d(0, paper.height, 0), point3d(0, 0, 0));
+    writer.addLine(point3d(drawWin.x1, 0, 0), point3d(drawWin.x1, paper.height, 0));
+
+    projectedParcels.forEach((parcel) => {
+      const pts = stripClosingPoint(parcel.rings[0]).map(toSheet);
+      if (pts.length < 2) return;
+      pts.forEach((start, index) => {
+        const end = pts[(index + 1) % pts.length];
+        writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0));
+      });
+    });
+
+    // north + scale
+    writer.addText(point3d(drawWin.x0 + 8, drawWin.y1 - 8, 0), 3, 'N');
+    writer.addLine(point3d(drawWin.x0 + 8, drawWin.y1 - 20, 0), point3d(drawWin.x0 + 8, drawWin.y1 - 10, 0));
+    writer.addText(point3d(drawWin.x0 + 18, drawWin.y1 - 8, 0), 2.5, `1:${scaleDenominator}`);
+
+    if (meta?.includeTitleBlock) {
+      const x0 = drawWin.x1 + 6;
+      const x1 = paper.width - 6;
+      const y0 = 6;
+      const y1 = paper.height - 6;
       writer.addLine(point3d(x0, y0, 0), point3d(x1, y0, 0));
       writer.addLine(point3d(x1, y0, 0), point3d(x1, y1, 0));
       writer.addLine(point3d(x1, y1, 0), point3d(x0, y1, 0));
@@ -274,17 +304,19 @@ export function toDXF(
         ["Location", `O.T. ${meta.ot || "***"}, Dimou ${meta.municipality || "(#Municipality)"}, ${meta.region || "(#Region)"}`],
         ["KAEK", meta.kaek || "-"],
       ];
-      const step = boxHeight / 10;
-      lines.forEach(([label, value], i) => {
-        const y = y1 - step * (i + 1);
-        writer.addText(point3d(x0 + boxWidth * 0.04, y, 0), step * 0.22, label);
-        writer.addText(point3d(x0 + boxWidth * 0.32, y, 0), step * 0.22, value);
+      let y = y1 - 10;
+      lines.forEach(([label, value]) => {
+        writer.addText(point3d(x0 + 4, y, 0), 2.2, label);
+        writer.addText(point3d(x0 + 34, y, 0), 2.2, value);
+        y -= 8;
       });
-      (meta.coords || []).slice(0, 20).forEach((row, idx) => {
-        const y = y1 - step * (idx + 5);
-        writer.addText(point3d(x0 + boxWidth * 0.04, y, 0), step * 0.18, `${row.i}`);
-        writer.addText(point3d(x0 + boxWidth * 0.12, y, 0), step * 0.18, row.x);
-        writer.addText(point3d(x0 + boxWidth * 0.52, y, 0), step * 0.18, row.y);
+      writer.addText(point3d(x0 + 4, y - 2, 0), 2.2, 'Coords EGSA87');
+      y -= 8;
+      (meta.coords || []).slice(0, 20).forEach((row) => {
+        writer.addText(point3d(x0 + 4, y, 0), 1.8, `${row.i}`);
+        writer.addText(point3d(x0 + 12, y, 0), 1.8, row.x);
+        writer.addText(point3d(x0 + 60, y, 0), 1.8, row.y);
+        y -= 5;
       });
     }
   }
