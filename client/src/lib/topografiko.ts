@@ -102,6 +102,15 @@ export async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null
   };
 }
 
+
+export function transformToWebMercator(lon: number, lat: number): [number, number] {
+  return proj4("EPSG:4326", "EPSG:3857", [lon, lat]);
+}
+
+export function transformFromWebMercator(x: number, y: number): [number, number] {
+  return proj4("EPSG:3857", "EPSG:4326", [x, y]);
+}
+
 export function transformToGGRS87(lon: number, lat: number): [number, number] {
   const wgs84 = "EPSG:4326";
   const ggrs87 = "+proj=tmerc +lat_0=0 +lon_0=24 +k=0.9996 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=-199.87,74.79,246.62,0,0,0,0 +units=m +no_defs";
@@ -116,18 +125,21 @@ export function transformFromGGRS87(x: number, y: number): [number, number] {
 
 export async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
   if (!rings?.[0]?.length) return null;
-  const center = centroidOfRing(rings[0]);
-  const [x, y] = transformToGGRS87(center.x, center.y);
-  const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 2100 } });
+  const points = rings[0];
+  const lons = points.map((p) => p.x);
+  const lats = points.map((p) => p.y);
+  const [xmin, ymin] = transformToWebMercator(Math.min(...lons), Math.min(...lats));
+  const [xmax, ymax] = transformToWebMercator(Math.max(...lons), Math.max(...lats));
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 102100 } });
   const params = new URLSearchParams({
     f: "json",
     returnGeometry: "true",
     spatialRel: "esriSpatialRelIntersects",
     geometry,
-    geometryType: "esriGeometryPoint",
-    inSR: "2100",
+    geometryType: "esriGeometryEnvelope",
+    inSR: "102100",
     outFields: "OBJECTID,FEK,OT_NUM,APOF_EIDOS,KALL_DHM_NAME",
-    outSR: "2100",
+    outSR: "102100",
     layer: JSON.stringify({ source: { type: "mapLayer", mapLayerId: 6 } }),
   });
   const url = `https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/dynamicLayer/query?${params.toString()}`;
@@ -142,7 +154,7 @@ export async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
     apofEidos: attrs.APOF_EIDOS || "",
     municipality: attrs.KALL_DHM_NAME || "",
     rings: (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => {
-      const [lon, lat] = transformFromGGRS87(point[0], point[1]);
+      const [lon, lat] = transformFromWebMercator(point[0], point[1]);
       return { x: lon, y: lat };
     })),
   };
