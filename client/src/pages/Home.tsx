@@ -2,6 +2,8 @@ import { Search, Download, Copy, Check, House, Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import proj4 from "proj4";
+import ThemeToggle from "@/components/ThemeToggle";
+import { useTheme } from "@/contexts/ThemeContext";
 import otaOfficeMap from "@shared/ota-office-map.json";
 import mainUseMap from "@shared/main-use-map.json";
 
@@ -457,6 +459,8 @@ export default function Home({ initialKaek }: HomeProps) {
   const [copiedKey, setCopiedKey] = useState("");
   const [openInfoKey, setOpenInfoKey] = useState("");
   const [showMoreRows, setShowMoreRows] = useState(false);
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   const primaryRing = useMemo(() => normalizeRing(parcel?.rings?.[0] ?? []), [parcel]);
   const path = useMemo(() => (primaryRing.length ? shapePath(primaryRing) : ""), [primaryRing]);
@@ -606,7 +610,7 @@ export default function Home({ initialKaek }: HomeProps) {
   };
 
   return (
-    <main className="min-h-screen bg-white px-4 py-10 text-neutral-900">
+    <main className="min-h-screen bg-background px-4 py-10 text-foreground transition-colors">
       <div className="mx-auto w-full max-w-5xl">
         <div className="mx-auto w-full max-w-2xl">
           <div className="flex items-center gap-3">
@@ -620,14 +624,14 @@ export default function Home({ initialKaek }: HomeProps) {
                 setNeighbors([]);
                 navigate(`/`);
               }}
-              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50"
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
               aria-label="Home"
               title="Αρχική"
             >
               <House className="h-5 w-5" />
             </button>
 
-            <div className="flex items-center gap-2 rounded-2xl border border-neutral-300 bg-white px-3 py-3 shadow-sm flex-1">
+            <div className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-card px-3 py-3 shadow-sm transition-colors">
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -635,7 +639,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 if (event.key === "Enter") handleSubmit();
               }}
               placeholder="Enter KAEK"
-              className="flex-1 bg-transparent px-1 text-lg text-neutral-900 outline-none"
+              className="flex-1 bg-transparent px-1 text-lg text-foreground outline-none placeholder:text-muted-foreground"
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
@@ -644,28 +648,30 @@ export default function Home({ initialKaek }: HomeProps) {
             <button
               type="button"
               onClick={handleSubmit}
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-900 text-white active:scale-[0.98]"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-transform active:scale-[0.98]"
               aria-label="Search"
               title="Search"
             >
               <Search className="h-5 w-5" />
             </button>
             </div>
+
+            <ThemeToggle compact />
           </div>
 
-          {message ? <p className="mt-3 px-1 text-sm text-neutral-500">{message}</p> : null}
-          {loading ? <p className="mt-2 px-1 text-sm text-neutral-400">Loading parcel data…</p> : null}
-{parcel && !teeData && !loading ? <p className="mt-2 px-1 text-sm text-neutral-400">Loading TEE data…</p> : null}
+          {message ? <p className="mt-3 px-1 text-sm text-muted-foreground">{message}</p> : null}
+          {loading ? <p className="mt-2 px-1 text-sm text-muted-foreground/80">Loading parcel data…</p> : null}
+{parcel && !teeData && !loading ? <p className="mt-2 px-1 text-sm text-muted-foreground/80">Loading TEE data…</p> : null}
         </div>
 
         {parcel ? (
           <div className="mt-10 space-y-8">
-            <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+            <section className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Οικόπεδο</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Οικόπεδο</h2>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-700" onClick={() => navigate(`/o/${parcel.kaek}/export`)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground" onClick={() => navigate(`/o/${parcel.kaek}/export`)}
                 >
                   <Download className="h-4 w-4" />
                   Export
@@ -673,8 +679,8 @@ export default function Home({ initialKaek }: HomeProps) {
               </div>
 
               <svg viewBox="0 0 320 320" className={`w-full ${teeCandidates.length > 1 ? "max-h-[720px]" : "max-h-[520px]"}`}>
-                <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
-                <path d={path} fill="rgba(59,130,246,0.06)" stroke="#60a5fa" strokeWidth="2.2" />
+                <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#fafafa"} />
+                <path d={path} fill={isDark ? "rgba(96,165,250,0.12)" : "rgba(59,130,246,0.06)"} stroke={isDark ? "#93c5fd" : "#60a5fa"} strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
                   const project = createSvgProjector(primaryRing);
                   const p = project(point);
@@ -682,49 +688,49 @@ export default function Home({ initialKaek }: HomeProps) {
                   const dy = index % 2 === 0 ? -8 : 16;
                   return (
                     <g key={index}>
-                      <circle cx={p.x} cy={p.y} r="3.6" fill="#111827" />
-                      <text x={p.x + dx + 5} y={p.y + dy - 2} fontSize="11" textAnchor="middle" fill="#334155">{greekLabel(index)}</text>
+                      <circle cx={p.x} cy={p.y} r="3.6" fill={isDark ? "#e2e8f0" : "#111827"} />
+                      <text x={p.x + dx + 5} y={p.y + dy - 2} fontSize="11" textAnchor="middle" fill={isDark ? "#cbd5e1" : "#334155"}>{greekLabel(index)}</text>
                     </g>
                   );
                 })}
               </svg>
             </section>
 
-            <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">Parcel data</h2>
+            <section className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Parcel data</h2>
 
-              <div className="overflow-hidden rounded-xl border border-neutral-200">
+              <div className="overflow-hidden rounded-xl border border-border">
                 <table className="w-full border-collapse text-sm">
                   <tbody>
                     {displayedRows.map((row) => {
                       const { label, value, source, sourceDetail } = row;
                       const copyKey = `row-${label}`;
                       return (
-                        <tr key={label} className="border-b border-neutral-200 last:border-b-0">
-                          <th className="w-52 bg-neutral-50 px-4 py-3 text-left font-medium text-neutral-600">{label}</th>
-                          <td className="px-4 py-3 text-neutral-900">
+                        <tr key={label} className="border-b border-border last:border-b-0">
+                          <th className="w-52 bg-muted/50 px-4 py-3 text-left font-medium text-muted-foreground">{label}</th>
+                          <td className="px-4 py-3 text-foreground">
                             <div className="flex items-center justify-between gap-3">
                               <span>{value}</span>
                               <div className="relative flex items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() => setOpenInfoKey((current) => (current === copyKey ? "" : copyKey))}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                                   title={`Info for ${label}`}
                                   aria-label={`Info for ${label}`}
                                 >
                                   <Info className="h-4 w-4" />
                                 </button>
                                 {openInfoKey === copyKey ? (
-                                  <div className="absolute right-20 top-10 z-10 w-56 rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-600 shadow-lg">
-                                    <div className="font-semibold text-neutral-800">Πηγή: {source}</div>
+                                  <div className="absolute right-20 top-10 z-10 w-56 rounded-xl border border-border bg-popover p-3 text-xs text-muted-foreground shadow-lg">
+                                    <div className="font-semibold text-foreground">Πηγή: {source}</div>
                                     <div className="mt-1">{sourceDetail || source}</div>
                                   </div>
                                 ) : null}
                                 <button
                                   type="button"
                                   onClick={() => copyValue(copyKey, value)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                                   title={`Copy ${label}`}
                                   aria-label={`Copy ${label}`}
                                 >
@@ -745,7 +751,7 @@ export default function Home({ initialKaek }: HomeProps) {
                   <button
                     type="button"
                     onClick={() => setShowMoreRows((current) => !current)}
-                    className="rounded-xl border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                    className="rounded-xl border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                   >
                     {showMoreRows ? "− λιγότερα" : "+ περισσότερα"}
                   </button>
@@ -754,11 +760,11 @@ export default function Home({ initialKaek }: HomeProps) {
 
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
                 <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Vertices</h3>
-                  <div className="max-h-72 overflow-auto rounded-xl border border-neutral-200">
+                  <h3 className="mb-2 text-sm font-semibold text-foreground">Vertices</h3>
+                  <div className="max-h-72 overflow-auto rounded-xl border border-border">
                     <table className="w-full border-collapse text-sm">
                       <thead>
-                        <tr className="bg-neutral-50 text-neutral-600">
+                        <tr className="bg-muted/50 text-muted-foreground">
                           <th className="px-3 py-2 text-left font-medium">#</th>
                           <th className="px-3 py-2 text-left font-medium">Lon</th>
                           <th className="px-3 py-2 text-left font-medium">Lat</th>
@@ -766,7 +772,7 @@ export default function Home({ initialKaek }: HomeProps) {
                       </thead>
                       <tbody>
                         {primaryRing.map((point, index) => (
-                          <tr key={index} className="border-t border-neutral-200">
+                          <tr key={index} className="border-t border-border">
                             <td className="px-3 py-2">{greekLabel(index)}</td>
                             <td className="px-3 py-2">{point.x.toFixed(6)}</td>
                             <td className="px-3 py-2">{point.y.toFixed(6)}</td>
@@ -778,18 +784,18 @@ export default function Home({ initialKaek }: HomeProps) {
                 </div>
 
                 <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Edge lengths</h3>
-                  <div className="max-h-72 overflow-auto rounded-xl border border-neutral-200">
+                  <h3 className="mb-2 text-sm font-semibold text-foreground">Edge lengths</h3>
+                  <div className="max-h-72 overflow-auto rounded-xl border border-border">
                     <table className="w-full border-collapse text-sm">
                       <thead>
-                        <tr className="bg-neutral-50 text-neutral-600">
+                        <tr className="bg-muted/50 text-muted-foreground">
                           <th className="px-3 py-2 text-left font-medium">Πλευρά</th>
                           <th className="px-3 py-2 text-left font-medium">Length</th>
                         </tr>
                       </thead>
                       <tbody>
                         {lengths.map((edge) => (
-                          <tr key={edge.label} className="border-t border-neutral-200">
+                          <tr key={edge.label} className="border-t border-border">
                             <td className="px-3 py-2">{edge.label}</td>
                             <td className="px-3 py-2">{formatNumber(edge.length, 2)} m</td>
                           </tr>
@@ -801,16 +807,16 @@ export default function Home({ initialKaek }: HomeProps) {
               </div>
 
               {/* Shareable URL */}
-              <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Shareable Link</h3>
+              <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4">
+                <h3 className="mb-2 text-sm font-semibold text-foreground">Shareable Link</h3>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-lg bg-white px-3 py-2 text-sm text-neutral-600">
+                  <code className="flex-1 rounded-lg bg-card px-3 py-2 text-sm text-muted-foreground">
                     {`${window.location.origin}/topografiko/o/${parcel.kaek}`}
                   </code>
                   <button
                     type="button"
                     onClick={() => copyValue('share-link', `${window.location.origin}/topografiko/o/${parcel.kaek}`)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-100"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                     title="Copy link"
                   >
                     {copiedKey === 'share-link' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -821,13 +827,13 @@ export default function Home({ initialKaek }: HomeProps) {
               {/* OT Map */}
               {(neighbors.length > 0 || teeCandidates.length > 1) && blockBounds ? (
                 <div className="mt-6">
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Χάρτης Ο.Τ.</h3>
-                                    <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-neutral-200 bg-neutral-50 shadow-inner">
-                    <rect x="0" y="0" width="320" height="320" fill="#fafafa" />
+                  <h3 className="mb-2 text-sm font-semibold text-foreground">Χάρτης Ο.Τ.</h3>
+                                    <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-border bg-muted/40 shadow-inner">
+                    <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#fafafa"} />
                     {teeCandidates.map((candidate, candidateIndex) => candidate.rings.map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
                       const isPrimary = candidateIndex === 0;
-                      return <path key={`ot-${candidateIndex}-${index}`} d={otPath} fill={isPrimary ? "rgba(59,130,246,0.04)" : "rgba(107,114,128,0.03)"} stroke={isPrimary ? "#60a5fa" : "#9ca3af"} strokeWidth={isPrimary ? "1.5" : "1.1"} strokeDasharray={isPrimary ? "4 4" : "3 5"} />;
+                      return <path key={`ot-${candidateIndex}-${index}`} d={otPath} fill={isPrimary ? (isDark ? "rgba(96,165,250,0.10)" : "rgba(59,130,246,0.04)") : (isDark ? "rgba(148,163,184,0.06)" : "rgba(107,114,128,0.03)")} stroke={isPrimary ? (isDark ? "#93c5fd" : "#60a5fa") : (isDark ? "#94a3b8" : "#9ca3af")} strokeWidth={isPrimary ? "1.5" : "1.1"} strokeDasharray={isPrimary ? "4 4" : "3 5"} />;
                     }))}
                     {neighbors.map((neighbor, index) => {
                       const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
@@ -838,8 +844,8 @@ export default function Home({ initialKaek }: HomeProps) {
                         <g key={neighbor.kaek}>
                           <path
                             d={nPath}
-                            fill="rgba(148,163,184,0.15)"
-                            stroke="#94a3b8"
+                            fill={isDark ? "rgba(148,163,184,0.18)" : "rgba(148,163,184,0.15)"}
+                            stroke={isDark ? "#cbd5e1" : "#94a3b8"}
                             strokeWidth="1.5"
                             className="cursor-pointer"
                             onClick={() => {
@@ -856,7 +862,7 @@ export default function Home({ initialKaek }: HomeProps) {
                             y={c.y + 4}
                             fontSize="7.5"
                             textAnchor="middle"
-                            fill="#334155"
+                            fill={isDark ? "#e2e8f0" : "#334155"}
                             className="cursor-pointer"
                             onClick={() => {
                               setQuery(neighbor.kaek);
@@ -874,8 +880,8 @@ export default function Home({ initialKaek }: HomeProps) {
                     })}
                     <path
                       d={pathFromRingWithBounds(primaryRing, blockBounds)}
-                      fill="rgba(59,130,246,0.08)"
-                      stroke="#60a5fa"
+                      fill={isDark ? "rgba(96,165,250,0.16)" : "rgba(59,130,246,0.08)"}
+                      stroke={isDark ? "#93c5fd" : "#60a5fa"}
                       strokeWidth="2.2"
                       className="cursor-pointer"
                       onClick={() => {
@@ -891,7 +897,7 @@ export default function Home({ initialKaek }: HomeProps) {
                           y={c.y + 4}
                           fontSize="7.5"
                           textAnchor="middle"
-                          fill="#1e3a8a"
+                          fill={isDark ? "#bfdbfe" : "#1e3a8a"}
                           className="cursor-pointer"
                           onClick={() => {
                             setQuery(parcel.kaek);
@@ -909,11 +915,11 @@ export default function Home({ initialKaek }: HomeProps) {
               {/* Neighboring Parcels */}
               {neighbors.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Οικόπεδα μέσα στο Ο.Τ.</h3>
-                  <div className="max-h-64 overflow-auto rounded-xl border border-neutral-200">
+                  <h3 className="mb-2 text-sm font-semibold text-foreground">Οικόπεδα μέσα στο Ο.Τ.</h3>
+                  <div className="max-h-64 overflow-auto rounded-xl border border-border">
                     <table className="w-full border-collapse text-sm">
                       <thead>
-                        <tr className="bg-neutral-50 text-neutral-600">
+                        <tr className="bg-muted/50 text-muted-foreground">
                           <th className="px-3 py-2 text-left font-medium">KAEK</th>
                           <th className="px-3 py-2 text-left font-medium">Χρήση</th>
                           <th className="px-3 py-2 text-left font-medium">Εμβαδόν</th>
@@ -921,7 +927,7 @@ export default function Home({ initialKaek }: HomeProps) {
                       </thead>
                       <tbody>
                         {neighbors.map((neighbor, index) => (
-                          <tr key={neighbor.kaek} className="border-t border-neutral-200">
+                          <tr key={neighbor.kaek} className="border-t border-border">
                             <td className="px-3 py-2">
                               <a
                                 href={`/topografiko/o/${neighbor.kaek}`}
@@ -934,7 +940,7 @@ export default function Home({ initialKaek }: HomeProps) {
                                     button?.click();
                                   }, 10);
                                 }}
-                                className="text-blue-600 hover:underline"
+                                className="text-blue-600 hover:underline dark:text-blue-300"
                               >
                                 {neighbor.kaek}
                               </a>
