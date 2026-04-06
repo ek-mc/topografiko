@@ -13,6 +13,7 @@ import {
   downloadText,
   fetchBuildingTerms,
   fetchContextOTs,
+  fetchOfficialRoadLabels,
   fetchParcelByKaek,
   fetchParcelsInOT,
   fetchTEECandidates,
@@ -70,6 +71,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [otParcels, setOtParcels] = useState<NeighborParcel[]>([]);
   const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
   const [contextOts, setContextOts] = useState<TEEData[]>([]);
+  const [officialRoadNames, setOfficialRoadNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<ExportMode>("parcel");
   const [showCoords, setShowCoords] = useState(true);
@@ -89,12 +91,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setParcel(result);
 
       if (result) {
-        const [candidates, terms] = await Promise.all([
+        const [candidates, terms, roadLabels] = await Promise.all([
           fetchTEECandidates(result.rings),
           fetchBuildingTerms(result.rings),
+          result.officialRingsGgrs87?.length ? fetchOfficialRoadLabels(result.officialRingsGgrs87) : Promise.resolve([]),
         ]);
         setTeeCandidates(candidates);
         setBuildingTerms(terms);
+        setOfficialRoadNames(Array.from(new Set(roadLabels.map((item) => item.name))).slice(0, 3));
         const tee = candidates[0] || null;
         setTeeData(tee);
 
@@ -103,17 +107,39 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
             fetchParcelsInOT(tee.rings, result.kaek),
             fetchContextOTs(tee.rings, tee.otNumber),
           ]);
-          const filtered = selectedOtParcels.filter((item) => {
+
+          const isDisplayableParcel = (item: NeighborParcel) => {
             const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
             const category = info?.category || "";
             const subcategory = info?.subcategory || "";
             const isRoad = category.includes("ΟΔΙΚΟ") || subcategory.includes("ΟΔΙΚΟ") || item.mainUse === "5100";
             const isHuge = (item.area ?? 0) > 5000;
             return !isRoad && !isHuge;
-          });
-          const adjacent = filterAdjacentParcels(result.rings, filtered);
+          };
+
+          const filteredCurrentOt = selectedOtParcels.filter(isDisplayableParcel);
+          const adjacent = filterAdjacentParcels(result.rings, filteredCurrentOt).map((item) => ({
+            ...item,
+            relation: "adjacent" as const,
+          }));
+          const adjacentKaeks = new Set(adjacent.map((item) => item.kaek));
+
+          const surroundingParcelGroups = await Promise.all(
+            surroundingOts.map((ot) => fetchParcelsInOT(ot.rings)),
+          );
+          const opposite = surroundingParcelGroups
+            .flat()
+            .filter(isDisplayableParcel)
+            .filter((item) => item.kaek !== result.kaek && !adjacentKaeks.has(item.kaek))
+            .reduce<NeighborParcel[]>((acc, item) => {
+              if (!acc.some((existing) => existing.kaek === item.kaek)) {
+                acc.push({ ...item, relation: "opposite" });
+              }
+              return acc;
+            }, []);
+
           setOtParcels(adjacent);
-          setContextParcels(adjacent);
+          setContextParcels(opposite);
           setContextOts(surroundingOts);
         } else {
           setOtParcels([]);
@@ -122,6 +148,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         }
       } else {
         setBuildingTerms(null);
+        setOfficialRoadNames([]);
         setContextOts([]);
       }
 
@@ -130,28 +157,32 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [initialKaek]);
 
   const includeBlock = mode !== "parcel";
+  const previewSize = 320;
+  const previewPad = 26;
 
   const previewParcels = useMemo(() => {
-    if (!parcel) return [] as Array<{ kaek: string; rings: Point[][]; current: boolean }>;
-    const blockParcels = otParcels.map((item) => ({
+    if (!parcel) return [] as Array<{ kaek: string; rings: Point[][]; current: boolean; relation?: "adjacent" | "opposite" }>;
+    const blockParcels = [...otParcels, ...contextParcels].map((item) => ({
       kaek: item.kaek,
       rings: item.rings,
       current: false,
+      relation: item.relation,
     }));
 
     return includeBlock
       ? [{ kaek: parcel.kaek, rings: parcel.rings, current: true }, ...blockParcels]
       : [{ kaek: parcel.kaek, rings: parcel.rings, current: true }];
-  }, [parcel, otParcels, includeBlock]);
+  }, [parcel, otParcels, contextParcels, includeBlock]);
 
   const previewBounds = useMemo(() => {
     const points = [
       ...previewParcels,
       ...(teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
       ...contextOts.map((item) => ({ rings: item.rings })),
+      ...contextParcels.map((item) => ({ rings: item.rings })),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, teeData, contextOts]);
+  }, [previewParcels, teeData, contextOts, contextParcels]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
     if (parcel?.officialRingsGgrs87?.[0]?.length) {
@@ -187,7 +218,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
 
-    const parcels = previewParcels.map((p) => ({ kaek: p.kaek, rings: p.rings }));
+    const parcels = previewParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
     const base = includeBlock ? `${parcel.kaek}-ot` : parcel.kaek;
 
     if (format === "geojson") {
@@ -205,20 +236,21 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           kaek: parcel.kaek,
           ot: teeData?.otNumber,
           municipality: teeData?.municipality,
-          region: "(#Perifereia)",
+          region: officialRoadNames.length ? officialRoadNames.join(", ") : undefined,
           area: parcel.area,
-          includeTitleBlock: showTitleBlock && mode === "full",
-          coords,
+          includeTitleBlock: showTitleBlock,
+          coords: showCoords ? coords : undefined,
           paperSize,
           scaleDenominator,
           otRings: teeData?.rings,
           contextOts,
-          buildingTerms,
+          buildingTerms: showTerms ? buildingTerms : null,
         }),
         "application/dxf",
         false,
       );
     }
+
   };
 
   return (
@@ -360,38 +392,50 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 <div className="space-y-4">
                   <div className="relative overflow-hidden rounded-xl border border-border bg-muted/40 shadow-inner transition-colors">
                     {previewBounds ? (
-                      <svg viewBox="0 0 320 320" className="aspect-square w-full">
-                        <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
-                        <rect x="18" y="18" width="220" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
-                        <line x1="238" y1="8" x2="238" y2="312" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
+                      <svg viewBox={`0 0 ${previewSize} ${previewSize}`} className="aspect-square w-full">
+                        <rect x="0" y="0" width={previewSize} height={previewSize} fill={isDark ? "#0f172a" : "#f8fafc"} />
+                        <rect x="18" y="18" width="284" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
                         <NorthArrow isDark={isDark} />
                         {contextOts.map((item, index) => {
                           const ring = item.rings[0];
                           if (!ring?.length) return null;
-                          const center = projectPoint(centroidOfRing(ring), previewBounds);
+                          const center = projectPoint(centroidOfRing(ring), previewBounds, previewSize, previewPad);
+                          const label = `Ο.Τ. ${item.otNumber}`;
+                          const labelWidth = Math.max(28, label.length * 2.7);
                           return (
                             <g key={`context-ot-${item.otNumber}-${index}`}>
                               <path
-                                d={pathFromRingWithBounds(ring, previewBounds)}
+                                d={pathFromRingWithBounds(ring, previewBounds, previewSize, previewPad)}
                                 fill="none"
-                                stroke="#22c55e"
-                                strokeWidth="1.2"
+                                stroke={isDark ? "#e2e8f0" : "#334155"}
+                                strokeWidth="1"
+                              />
+                              <rect
+                                x={center.x - labelWidth / 2}
+                                y={center.y - 7}
+                                width={labelWidth}
+                                height="14"
+                                rx="1.5"
+                                fill={isDark ? "#0f172a" : "#f8fafc"}
+                                stroke={isDark ? "#e2e8f0" : "#334155"}
+                                strokeWidth="0.8"
                               />
                               <text
                                 x={center.x}
-                                y={center.y + 2}
+                                y={center.y + 0.6}
                                 fontSize="4.4"
                                 textAnchor="middle"
-                                fill="#22c55e"
+                                dominantBaseline="middle"
+                                fill={isDark ? "#f8fafc" : "#111827"}
                               >
-                                {`Ο.Τ. ${item.otNumber}`}
+                                {label}
                               </text>
                             </g>
                           );
                         })}
                         {previewParcels.filter((item) => !item.current).map((item) => {
-                          const path = pathFromRingWithBounds(item.rings[0], previewBounds);
-                          const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds);
+                          const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
+                          const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
                           return (
                             <g key={`adj-${item.kaek}`}>
                               <path
@@ -414,8 +458,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           );
                         })}
                         {previewParcels.filter((item) => item.current).map((item) => {
-                          const path = pathFromRingWithBounds(item.rings[0], previewBounds);
-                          const c = projectPoint(centroidOfRing(item.rings[0]), previewBounds);
+                          const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
+                          const c = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
                           return (
                             <g key={item.kaek}>
                               <path
@@ -439,10 +483,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         {(() => {
                           const otRing = teeData?.rings?.[0];
                           if (!otRing) return null;
-                          const c = projectPoint(centroidOfRing(otRing), previewBounds);
+                          const c = projectPoint(centroidOfRing(otRing), previewBounds, previewSize, previewPad);
                           return (
                             <g>
-                              <rect x={c.x - 17} y={c.y - 6.5} width="34" height="13" rx="1.5" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
+                              <rect x={c.x - 17} y={c.y - 6.5} width="34" height="13" rx="1.5" fill={isDark ? "#0f172a" : "#f8fafc"} stroke={isDark ? "#e2e8f0" : "#334155"} strokeWidth="1" />
                               <text x={c.x} y={c.y + 0.5} fontSize="4.8" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{`Ο.Τ. ${teeData?.otNumber || "-"}`}</text>
                             </g>
                           );
@@ -460,7 +504,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           });
                         })}
                         <g>
-                          <rect x="156" y="244" width="82" height="58" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
+                          <rect x="156" y="244" width="82" height="58" fill={isDark ? "#0f172a" : "#f8fafc"} stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
                           <text x="162" y="252" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
                           <line x1="162" y1="261" x2="182" y2="261" stroke="#22c55e" strokeWidth="1.6" />
                           <text x="187" y="264" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
@@ -471,7 +515,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           <line x1="162" y1="297" x2="182" y2="297" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
                           <text x="187" y="300" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όρια όμορων οικοπέδων</text>
                         </g>
-                        <text x="250" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
+                        <text x="224" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
                       </svg>
                     ) : null}
                   </div>

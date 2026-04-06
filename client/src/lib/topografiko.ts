@@ -53,11 +53,20 @@ type TEERawFeature = {
 
 export type TEECandidate = TEEData & { objectId?: string; containsCentroid?: boolean };
 
+export type OfficialRoadLabel = {
+  name: string;
+  municipality: string;
+  kind: number;
+  point: Point;
+  distanceToParcel: number;
+};
+
 export type NeighborParcel = {
   kaek: string;
   mainUse: string;
   area: number | null;
   rings: Point[][];
+  relation?: "adjacent" | "opposite";
 };
 
 export function stripClosingPoint(points: Point[]) {
@@ -96,11 +105,11 @@ export function projectPoint(point: Point, bounds: { minX: number; maxX: number;
   };
 }
 
-export function pathFromRingWithBounds(points: Point[], bounds: { minX: number; maxX: number; minY: number; maxY: number }) {
+export function pathFromRingWithBounds(points: Point[], bounds: { minX: number; maxX: number; minY: number; maxY: number }, size = 320, pad = 22) {
   const usable = stripClosingPoint(points);
   if (!usable.length) return "";
   return usable.map((point, index) => {
-    const p = projectPoint(point, bounds);
+    const p = projectPoint(point, bounds, size, pad);
     return `${index === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`;
   }).join(" ") + " Z";
 }
@@ -214,6 +223,127 @@ function readNumber(value: unknown) {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function distancePointToSegment(point: Point, start: Point, end: Point) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
+  }
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)));
+  const px = start.x + t * dx;
+  const py = start.y + t * dy;
+  return Math.hypot(point.x - px, point.y - py);
+}
+
+function distancePointToRing(point: Point, ring: Point[]) {
+  const usable = stripClosingPoint(ring);
+  if (!usable.length) return Number.POSITIVE_INFINITY;
+  if (pointInRing(point, usable)) return 0;
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < usable.length; index += 1) {
+    const start = usable[index];
+    const end = usable[(index + 1) % usable.length];
+    minDistance = Math.min(minDistance, distancePointToSegment(point, start, end));
+  }
+  return minDistance;
+}
+
+function distancePointToRings(point: Point, rings: Point[][]) {
+  return rings.reduce((minDistance, ring) => Math.min(minDistance, distancePointToRing(point, ring)), Number.POSITIVE_INFINITY);
+}
+
+async function loadJsonpValue(url: string, callbackPath: string) {
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    throw new Error("JSONP is only available in browser context");
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const root = window as Window & typeof globalThis & { __topografikoJsonp?: Record<string, (value: unknown) => void> };
+    root.__topografikoJsonp = root.__topografikoJsonp || {};
+    const callbackId = `cb_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const fullCallbackPath = `${callbackPath}.${callbackId}`;
+    const separator = url.includes("?") ? "&" : "?";
+    const script = document.createElement("script");
+    let settled = false;
+
+    const cleanup = () => {
+      delete root.__topografikoJsonp?.[callbackId];
+      script.remove();
+    };
+
+    root.__topografikoJsonp[callbackId] = (value: unknown) => {
+      settled = true;
+      cleanup();
+      resolve(String(value ?? ""));
+    };
+
+    script.async = true;
+    script.src = `${url}${separator}callback=${encodeURIComponent(fullCallbackPath)}&scriptIndex=0`;
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("JSONP request failed"));
+    };
+
+    document.body.appendChild(script);
+
+    window.setTimeout(() => {
+      if (settled) return;
+      cleanup();
+      reject(new Error("JSONP request timed out"));
+    }, 12000);
+  });
+}
+
+function parseOfficialInfoResponse(raw: string) {
+  const payload = raw.startsWith("Info|") ? raw.slice(5) : raw;
+  return payload
+    .split("~")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [name, municipality, kindText, xText, yText] = entry.split("::");
+      const x = Number(xText);
+      const y = Number(yText);
+      const kind = Number(kindText);
+      if (!name || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(kind)) return null;
+      return {
+        name: name.trim(),
+        municipality: (municipality || "").trim(),
+        kind,
+        point: { x, y },
+      };
+    })
+    .filter((item): item is { name: string; municipality: string; kind: number; point: Point } => Boolean(item));
+}
+
+export async function fetchOfficialRoadLabels(ringsGgrs87: Point[][]): Promise<OfficialRoadLabel[]> {
+  const usableRings = ringsGgrs87.map((ring) => stripClosingPoint(ring)).filter((ring) => ring.length >= 3);
+  if (!usableRings.length) return [];
+
+  const allPoints = usableRings.flat();
+  const bounds = boundsFromPoints(allPoints);
+  const pad = 180;
+  const data = `Info:::${bounds.minX - pad}:${bounds.minY - pad}:${bounds.maxX + pad}:${bounds.maxY + pad}:10:1`;
+  const url = `https://gis.ktimanet.gr/gis/WebAPIWebServicev1.3/ImageService.aspx?Data=${encodeURIComponent(data)}&KEY=maps.gov.gr`;
+  const raw = await loadJsonpValue(url, "__topografikoJsonp");
+  const seen = new Set<string>();
+
+  return parseOfficialInfoResponse(raw)
+    .filter((item) => item.kind === 3)
+    .map((item) => ({
+      ...item,
+      distanceToParcel: distancePointToRings(item.point, usableRings),
+    }))
+    .filter((item) => item.distanceToParcel <= 220)
+    .sort((a, b) => a.distanceToParcel - b.distanceToParcel || a.name.localeCompare(b.name, "el"))
+    .filter((item) => {
+      const key = `${item.name}::${item.municipality}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function formatValue(value: unknown, suffix = "", digits = 2) {
@@ -764,6 +894,45 @@ function clipSegmentToRect(start: Point, end: Point, rect: { minX: number; minY:
   }
 }
 
+function pointInRect(point: Point, rect: { minX: number; minY: number; maxX: number; maxY: number }, tolerance = 1e-6) {
+  return point.x >= rect.minX - tolerance && point.x <= rect.maxX + tolerance && point.y >= rect.minY - tolerance && point.y <= rect.maxY + tolerance;
+}
+
+function segmentParameter(point: Point, start: Point, end: Point) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-12) return 0;
+  const raw = Math.abs(dx) >= Math.abs(dy)
+    ? (point.x - start.x) / (dx || 1e-12)
+    : (point.y - start.y) / (dy || 1e-12);
+  return Math.max(0, Math.min(1, raw));
+}
+
+function splitSegmentOutsideRect(start: Point, end: Point, rect: { minX: number; minY: number; maxX: number; maxY: number }) {
+  const startInside = pointInRect(start, rect);
+  const endInside = pointInRect(end, rect);
+  const inside = clipSegmentToRect(start, end, rect);
+  if (!inside) return [{ start, end }];
+  if (startInside && endInside) return [] as Array<{ start: Point; end: Point }>;
+
+  const t0 = segmentParameter(inside.start, start, end);
+  const t1 = segmentParameter(inside.end, start, end);
+  const minT = Math.min(t0, t1);
+  const maxT = Math.max(t0, t1);
+  const segments: Array<{ start: Point; end: Point }> = [];
+
+  if (!startInside && minT > 1e-6) {
+    segments.push({ start, end: inside.start });
+  }
+
+  if (!endInside && maxT < 1 - 1e-6) {
+    segments.push({ start: inside.end, end });
+  }
+
+  return segments;
+}
+
 function buildParcelEdgeLabels(points: Point[]) {
   const usable = stripClosingPoint(points);
   return usable.map((point, index) => {
@@ -801,7 +970,7 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 }
 
 export function toDXF(
-  parcels: { kaek: string; rings: Point[][] }[],
+  parcels: { kaek: string; rings: Point[][]; relation?: "adjacent" | "opposite" }[],
   meta?: {
     kaek?: string;
     ot?: string;
@@ -822,6 +991,7 @@ export function toDXF(
   writer.setVariable("$DWGCODEPAGE", { 3: "ANSI_1253" });
   writer.addLType("PARCEL_DASH", "Parcel boundary dash", [8, -4]);
   writer.addLayer("OT_BOUNDARY", 3, "CONTINUOUS");
+  writer.addLayer("OT_CONTEXT", 7, "CONTINUOUS");
   writer.addLayer("BUILDING_LINE", 1, "CONTINUOUS");
   writer.addLayer("PARCEL_MAIN", 7, "CONTINUOUS");
   writer.addLayer("PARCEL_ADJ", 8, "PARCEL_DASH");
@@ -836,6 +1006,7 @@ export function toDXF(
 
   const projectedParcels = parcels.map((parcel) => ({
     ...parcel,
+    relation: parcel.relation,
     rings: parcel.rings.map((ring) => ring.map((p) => {
       const [x, y] = transformToGGRS87(p.x, p.y);
       return { x, y };
@@ -855,6 +1026,7 @@ export function toDXF(
 
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
+  const includeTitleBlock = Boolean(meta?.includeTitleBlock);
   const paperConfig = paperSize === "A1"
     ? { width: 841, height: 594, outerMargin: 12, frameGap: 2.5, gutter: 10, titleBlockWidth: 204, textFactor: 1.65 }
     : paperSize === "A3"
@@ -865,7 +1037,9 @@ export function toDXF(
   const drawWin = {
     x0: paperConfig.outerMargin + mm(paperConfig.frameGap),
     y0: paperConfig.outerMargin + mm(paperConfig.frameGap),
-    x1: paper.width - paperConfig.outerMargin - paperConfig.titleBlockWidth - paperConfig.gutter,
+    x1: includeTitleBlock
+      ? paper.width - paperConfig.outerMargin - paperConfig.titleBlockWidth - paperConfig.gutter
+      : paper.width - paperConfig.outerMargin - mm(paperConfig.frameGap),
     y1: paper.height - paperConfig.outerMargin - mm(paperConfig.frameGap),
   };
 
@@ -905,11 +1079,24 @@ export function toDXF(
     : formatCoordinateRows(parcels[0].rings[0], "P");
   const coordinateTitle = "ΣΥΝΤ/ΜΕΝΕΣ ΚΟΡΥΦΩΝ ΟΙΚΟΠΕΔΟΥ ΕΓΣΑ'87";
   const coordinateLoopLabel = buildCoordinateLoopLabel(coordinateRows);
+  const legendWidth = mm(82);
+  const legendHeight = mm(31);
+  const legendX = drawWin.x1 - legendWidth - mm(1.5);
+  const legendY = drawWin.y0 + mm(1.5);
   const clipRect = { minX: drawWin.x0, minY: drawWin.y0, maxX: drawWin.x1, maxY: drawWin.y1 };
-  const addClippedSheetLine = (start: Point, end: Point, options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number }) => {
+  const legendMaskRect = {
+    minX: legendX - mm(1.4),
+    minY: legendY - mm(1.4),
+    maxX: legendX + legendWidth + mm(1.4),
+    maxY: legendY + legendHeight + mm(1.4),
+  };
+  const addMaskedSheetLine = (start: Point, end: Point, options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number }) => {
     const clipped = clipSegmentToRect(start, end, clipRect);
     if (!clipped) return null;
-    return addDxfLine(writer, clipped.start, clipped.end, options);
+    const visibleSegments = splitSegmentOutsideRect(clipped.start, clipped.end, legendMaskRect);
+    if (!visibleSegments.length) return null;
+    visibleSegments.forEach((segment) => addDxfLine(writer, segment.start, segment.end, options));
+    return true;
   };
 
   addDxfLine(writer, { x: 0, y: 0 }, { x: paper.width, y: 0 }, { layerName: "ANNOTATION" });
@@ -932,8 +1119,8 @@ export function toDXF(
     addDxfText(writer, sx - mm(0.8), drawWin.y0 - mm(5.8), gridLabelHeight, String(Math.round(worldX)), { rotation: 90, layerName: "ANNOTATION" });
     for (let worldY = Math.ceil(visibleWorld.minY / worldGridStep) * worldGridStep; worldY <= visibleWorld.maxY + 0.001; worldY += worldGridStep) {
       const sy = windowCenterY + (worldY - fitCenterY) * scale;
-      addDxfLine(writer, { x: sx - crossHalf, y: sy }, { x: sx + crossHalf, y: sy }, { layerName: "COORD_GRID" });
-      addDxfLine(writer, { x: sx, y: sy - crossHalf }, { x: sx, y: sy + crossHalf }, { layerName: "COORD_GRID" });
+      addMaskedSheetLine({ x: sx - crossHalf, y: sy }, { x: sx + crossHalf, y: sy }, { layerName: "COORD_GRID" });
+      addMaskedSheetLine({ x: sx, y: sy - crossHalf }, { x: sx, y: sy + crossHalf }, { layerName: "COORD_GRID" });
     }
   }
 
@@ -949,12 +1136,20 @@ export function toDXF(
       const pts = stripClosingPoint(ring).map(toSheet);
       pts.forEach((start, index) => {
         const end = pts[(index + 1) % pts.length];
-        addClippedSheetLine(start, end, { layerName: "OT_BOUNDARY", colorNumber: 3 });
+        addMaskedSheetLine(start, end, { layerName: "OT_CONTEXT", colorNumber: 7 });
       });
     });
     const labelPoint = toSheet(centroidOfRing(ot.rings[0] || []));
-    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1) {
-      addCenteredDxfText(writer, labelPoint.x, labelPoint.y, mm(1.35), `Ο.Τ. ${ot.otNumber}`, { layerName: "ANNOTATION", colorNumber: 3 });
+    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
+      const text = `Ο.Τ. ${ot.otNumber}`;
+      const textHeight = mm(1.35);
+      const halfWidth = estimateTextWidth(text, textHeight) / 2 + mm(1.8);
+      const halfHeight = mm(2.6);
+      addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { x: labelPoint.x + halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addDxfLine(writer, { x: labelPoint.x + halfWidth, y: labelPoint.y - halfHeight }, { x: labelPoint.x + halfWidth, y: labelPoint.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addDxfLine(writer, { x: labelPoint.x + halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
     }
   });
 
@@ -964,14 +1159,15 @@ export function toDXF(
     const sheetPoints = pts.map(toSheet);
     sheetPoints.forEach((start, index) => {
       const end = sheetPoints[(index + 1) % sheetPoints.length];
-      addClippedSheetLine(start, end, { layerName: "PARCEL_ADJ", lineType: "PARCEL_DASH", lineTypeScale: mm(0.6), colorNumber: 8 });
+        addMaskedSheetLine(start, end, { layerName: "PARCEL_ADJ", lineType: "PARCEL_DASH", lineTypeScale: mm(0.6), colorNumber: 8 });
+
     });
   });
 
   const mainSheetPoints = mainParcelPoints.map(toSheet);
   mainSheetPoints.forEach((start, index) => {
     const end = mainSheetPoints[(index + 1) % mainSheetPoints.length];
-    addDxfLine(writer, start, end, { layerName: "PARCEL_MAIN", colorNumber: 7 });
+    addMaskedSheetLine(start, end, { layerName: "PARCEL_MAIN", colorNumber: 7 });
   });
   const mainLabelPoint = toSheet(centroidOfRing(mainParcel.rings[0]));
   addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mm(1.8), mainParcel.kaek, { layerName: "ANNOTATION" });
@@ -993,7 +1189,7 @@ export function toDXF(
     const dotA = normalA.x * toCenter.x + normalA.y * toCenter.y;
     const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
     const inward = dotA >= dotB ? normalA : normalB;
-    const mid = { x: midpoint.x + inward.x * mm(3.5), y: midpoint.y + inward.y * mm(3.5) };
+    const mid = { x: midpoint.x + inward.x * mm(4.2), y: midpoint.y + inward.y * mm(4.2) };
     const radialLength = Math.max(Math.hypot(vertex.x - parcelCenter.x, vertex.y - parcelCenter.y), 1e-9);
     const vertexLabelPoint = {
       x: vertex.x + ((vertex.x - parcelCenter.x) / radialLength) * mm(2.2),
@@ -1012,11 +1208,11 @@ export function toDXF(
     const otCenter = toSheet(centroidOfRing(projectedOtRings[0]));
     const halfWidth = mm(11.5);
     const halfHeight = mm(4.8);
-    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { layerName: "ANNOTATION" });
-    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { layerName: "ANNOTATION" });
-    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { layerName: "ANNOTATION" });
-    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { layerName: "ANNOTATION" });
-    addCenteredDxfText(writer, otCenter.x, otCenter.y - mm(0.9), mm(1.9), `Ο.Τ. ${meta?.ot || "-"}`, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addCenteredDxfText(writer, otCenter.x, otCenter.y - mm(0.9), mm(1.9), `Ο.Τ. ${meta?.ot || "-"}`, { layerName: "ANNOTATION", colorNumber: 7 });
   }
 
   const northX = drawWin.x0 + mm(16);
@@ -1027,10 +1223,6 @@ export function toDXF(
   addDxfLine(writer, { x: northX - mm(4), y: northY - mm(6) }, { x: northX + mm(4), y: northY - mm(6) }, { layerName: "ANNOTATION" });
   addCenteredDxfText(writer, northX, northY + mm(6), mm(3), "Β", { layerName: "ANNOTATION" });
 
-  const legendWidth = mm(82);
-  const legendHeight = mm(31);
-  const legendX = drawWin.x1 - legendWidth - mm(1.5);
-  const legendY = drawWin.y0 + mm(1.5);
   addDxfLine(writer, { x: legendX, y: legendY }, { x: legendX + legendWidth, y: legendY }, { layerName: "ANNOTATION" });
   addDxfLine(writer, { x: legendX + legendWidth, y: legendY }, { x: legendX + legendWidth, y: legendY + legendHeight }, { layerName: "ANNOTATION" });
   addDxfLine(writer, { x: legendX + legendWidth, y: legendY + legendHeight }, { x: legendX, y: legendY + legendHeight }, { layerName: "ANNOTATION" });
@@ -1049,11 +1241,12 @@ export function toDXF(
     const pts = stripClosingPoint(ring).map(toSheet);
     pts.forEach((start, index) => {
       const end = pts[(index + 1) % pts.length];
-      addClippedSheetLine(start, end, { layerName: "OT_BOUNDARY", colorNumber: 3 });
+        addMaskedSheetLine(start, end, { layerName: "OT_CONTEXT", colorNumber: 7 });
+
     });
   });
 
-  if (meta?.includeTitleBlock) {
+  if (includeTitleBlock) {
     const x0 = drawWin.x1 + paperConfig.gutter;
     const x1 = paper.width - paperConfig.outerMargin;
     const y0 = paperConfig.outerMargin;
@@ -1074,11 +1267,12 @@ export function toDXF(
       ["Μελετητής", "-"],
       ["Έργο", "Τοπογραφικό Διάγραμμα"],
       ["Θέση", `Ο.Τ. ${meta?.ot || "-"}, Δήμος ${meta?.municipality || "-"}`],
+      ...(meta?.region ? [["Οδοί", meta.region]] as const : []),
       ["KAEK", meta?.kaek || "-"],
       ["Κλίμακα", `1:${scaleDenominator}`],
       ["Ημερομηνία", dateText],
       ["Σύστημα αναφοράς", "ΕΓΣΑ '87"],
-    ] as const;
+    ];
 
     let y = y1 - headerHeight - mm(8);
     lines.forEach(([label, value]) => {
