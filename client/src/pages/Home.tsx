@@ -470,13 +470,12 @@ export default function Home({ initialKaek }: HomeProps) {
     const allPoints = [
       ...(teeData?.rings?.flatMap((ring) => stripClosingPoint(ring)) ?? []),
       ...primaryRing,
-      ...neighbors.flatMap((neighbor) => stripClosingPoint(neighbor.rings?.[0] ?? [])),
     ];
     if (!allPoints.length) return null;
     const xs = allPoints.map((p) => p.x);
     const ys = allPoints.map((p) => p.y);
     return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-  }, [primaryRing, neighbors, teeData, otContext]);
+  }, [primaryRing, teeData]);
 
   useEffect(() => {
     if (initialKaek) {
@@ -834,52 +833,17 @@ export default function Home({ initialKaek }: HomeProps) {
                                     <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-border bg-muted/40 shadow-inner">
                     <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
                     <NorthArrow isDark={isDark} />
-                    {teeCandidates.map((candidate, candidateIndex) => candidate.rings.map((ring, index) => {
+                    {(teeData?.rings ?? []).map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
-                      const isPrimary = candidateIndex === 0;
-                      return <path key={`ot-${candidateIndex}-${index}`} d={otPath} fill={isPrimary ? (isDark ? "rgba(96,165,250,0.10)" : "rgba(59,130,246,0.04)") : (isDark ? "rgba(148,163,184,0.06)" : "rgba(107,114,128,0.03)")} stroke={isPrimary ? (isDark ? "#93c5fd" : "#60a5fa") : (isDark ? "#94a3b8" : "#9ca3af")} strokeWidth={isPrimary ? "1.5" : "1.1"} strokeDasharray={isPrimary ? "4 4" : "3 5"} />;
-                    }))}
-                    {neighbors.map((neighbor, index) => {
-                      const ring = stripClosingPoint(neighbor.rings?.[0] ?? []);
-                      if (!ring.length) return null;
-                      const nPath = pathFromRingWithBounds(ring, blockBounds);
-                      const c = projectPoint(centroid(ring), blockBounds);
                       return (
-                        <g key={neighbor.kaek}>
-                          <path
-                            d={nPath}
-                            fill={isDark ? "rgba(148,163,184,0.18)" : "rgba(148,163,184,0.15)"}
-                            stroke={isDark ? "#cbd5e1" : "#94a3b8"}
-                            strokeWidth="1.5"
-                            className="cursor-pointer"
-                            onClick={() => {
-                              setQuery(neighbor.kaek);
-                              navigate(`/o/${neighbor.kaek}`);
-                              setTimeout(() => {
-                                const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
-                                button?.click();
-                              }, 10);
-                            }}
-                          />
-                          <text
-                            x={c.x}
-                            y={c.y + 4}
-                            fontSize="7.5"
-                            textAnchor="middle"
-                            fill={isDark ? "#e2e8f0" : "#334155"}
-                            className="cursor-pointer"
-                            onClick={() => {
-                              setQuery(neighbor.kaek);
-                              navigate(`/o/${neighbor.kaek}`);
-                              setTimeout(() => {
-                                const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
-                                button?.click();
-                              }, 10);
-                            }}
-                          >
-                            {neighbor.kaek}
-                          </text>
-                        </g>
+                        <path
+                          key={`ot-${index}`}
+                          d={otPath}
+                          fill={isDark ? "rgba(96,165,250,0.10)" : "rgba(59,130,246,0.04)"}
+                          stroke={isDark ? "#93c5fd" : "#60a5fa"}
+                          strokeWidth="1.5"
+                          strokeDasharray="4 4"
+                        />
                       );
                     })}
                     <path

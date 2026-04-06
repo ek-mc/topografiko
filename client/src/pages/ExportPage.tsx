@@ -168,8 +168,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           paperSize,
           scaleDenominator: 200,
         }),
-        "application/dxf;charset=utf-8",
-        true,
+        "application/dxf",
+        false,
       );
     }
   };
@@ -285,8 +285,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="space-y-4">
                   <div className="relative overflow-hidden rounded-xl border border-border bg-muted/40 shadow-inner transition-colors">
-                    <div className="absolute left-4 top-4 z-10 text-xs text-muted-foreground">Κλίμακα 1:200</div>
-
                     {previewBounds ? (
                       <svg viewBox="0 0 320 320" className="aspect-square w-full">
                         <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />

@@ -339,10 +339,6 @@ export function toDXF(
   
   if (parcelPoints.length) {
     const bounds = boundsFromPoints(parcelPoints);
-    
-    // DEBUG: Check if projection worked (EGSA87 = large numbers, WGS84 = small numbers)
-    console.log('DEBUG bounds:', bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
-    
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
     
@@ -388,12 +384,11 @@ export function toDXF(
     // north arrow symbol (triangle with line)
     const nx = drawWin.x0 + 12;
     const ny = drawWin.y1 - 15;
-    writer.addLine(point3d(nx, ny - 12, 0), point3d(nx, ny + 3, 0)); // vertical line
-    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx - 4, ny - 5, 0)); // left side
-    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx + 4, ny - 5, 0)); // right side
-    writer.addLine(point3d(nx - 4, ny - 5, 0), point3d(nx + 4, ny - 5, 0)); // base
+    writer.addLine(point3d(nx, ny - 12, 0), point3d(nx, ny + 3, 0));
+    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx - 4, ny - 5, 0));
+    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx + 4, ny - 5, 0));
+    writer.addLine(point3d(nx - 4, ny - 5, 0), point3d(nx + 4, ny - 5, 0));
     writer.addText(point3d(nx - 2, ny + 6, 0), 3, encodeDxfText("Β"));
-    writer.addText(point3d(nx + 10, ny, 0), 2.5, encodeDxfText(`1:${scaleDenominator}`));
 
     // coordinate frame ticks with crosshairs and rounded coords
     const tickStep = 50; // mm on paper
