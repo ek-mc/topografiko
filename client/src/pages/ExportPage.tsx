@@ -157,32 +157,43 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [initialKaek]);
 
   const includeBlock = mode !== "parcel";
+  const includeOtContext = mode === "ot" || mode === "full";
+  const includeFullContext = mode === "full";
   const previewSize = 320;
   const previewPad = 26;
 
-  const previewParcels = useMemo(() => {
+  const exportParcels = useMemo(() => {
     if (!parcel) return [] as Array<{ kaek: string; rings: Point[][]; current: boolean; relation?: "adjacent" | "opposite" }>;
-    const blockParcels = [...otParcels, ...contextParcels].map((item) => ({
+    const otContextParcels = otParcels.map((item) => ({
+      kaek: item.kaek,
+      rings: item.rings,
+      current: false,
+      relation: item.relation,
+    }));
+    const fullContextParcels = contextParcels.map((item) => ({
       kaek: item.kaek,
       rings: item.rings,
       current: false,
       relation: item.relation,
     }));
 
-    return includeBlock
-      ? [{ kaek: parcel.kaek, rings: parcel.rings, current: true }, ...blockParcels]
-      : [{ kaek: parcel.kaek, rings: parcel.rings, current: true }];
-  }, [parcel, otParcels, contextParcels, includeBlock]);
+    return [
+      { kaek: parcel.kaek, rings: parcel.rings, current: true },
+      ...(includeOtContext ? otContextParcels : []),
+      ...(includeFullContext ? fullContextParcels : []),
+    ];
+  }, [parcel, otParcels, contextParcels, includeOtContext, includeFullContext]);
+
+  const previewParcels = exportParcels;
 
   const previewBounds = useMemo(() => {
     const points = [
       ...previewParcels,
-      ...(teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
-      ...contextOts.map((item) => ({ rings: item.rings })),
-      ...contextParcels.map((item) => ({ rings: item.rings })),
+      ...(includeOtContext && teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
+      ...(includeFullContext ? contextOts.map((item) => ({ rings: item.rings })) : []),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, teeData, contextOts, contextParcels]);
+  }, [previewParcels, teeData, contextOts, includeOtContext, includeFullContext]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
     if (parcel?.officialRingsGgrs87?.[0]?.length) {
@@ -218,8 +229,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
 
-    const parcels = previewParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
-    const base = includeBlock ? `${parcel.kaek}-ot` : parcel.kaek;
+    const parcels = exportParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
+    const base = mode === "parcel" ? parcel.kaek : mode === "ot" ? `${parcel.kaek}-ot` : `${parcel.kaek}-full`;
 
     if (format === "geojson") {
       downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
@@ -242,8 +253,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           coords: showCoords ? coords : undefined,
           paperSize,
           scaleDenominator,
-          otRings: teeData?.rings,
-          contextOts,
+          otRings: includeOtContext ? teeData?.rings : undefined,
+          contextOts: includeFullContext ? contextOts : undefined,
           buildingTerms: showTerms ? buildingTerms : null,
         }),
         "application/dxf",

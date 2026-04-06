@@ -1008,17 +1008,23 @@ export function toDXF(
     ...parcel,
     relation: parcel.relation,
     rings: parcel.rings.map((ring) => ring.map((p) => {
+      const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
+      if (isLikelyGgrs) return { x: p.x, y: p.y };
       const [x, y] = transformToGGRS87(p.x, p.y);
       return { x, y };
     })),
   }));
   const projectedOtRings = (meta?.otRings || []).map((ring) => ring.map((p) => {
+    const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
+    if (isLikelyGgrs) return { x: p.x, y: p.y };
     const [x, y] = transformToGGRS87(p.x, p.y);
     return { x, y };
   }));
   const projectedContextOts = (meta?.contextOts || []).map((ot) => ({
     ...ot,
     rings: ot.rings.map((ring) => ring.map((p) => {
+      const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
+      if (isLikelyGgrs) return { x: p.x, y: p.y };
       const [x, y] = transformToGGRS87(p.x, p.y);
       return { x, y };
     })),
@@ -1159,9 +1165,20 @@ export function toDXF(
     const sheetPoints = pts.map(toSheet);
     sheetPoints.forEach((start, index) => {
       const end = sheetPoints[(index + 1) % sheetPoints.length];
-        addMaskedSheetLine(start, end, { layerName: "PARCEL_ADJ", lineType: "PARCEL_DASH", lineTypeScale: mm(0.6), colorNumber: 8 });
-
+      addMaskedSheetLine(start, end, {
+        layerName: "PARCEL_ADJ",
+        lineType: "PARCEL_DASH",
+        lineTypeScale: mm(0.6),
+        colorNumber: 8,
+      });
     });
+    const labelPoint = toSheet(centroidOfRing(parcel.rings[0] || []));
+    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
+      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), mm(1.2), parcel.kaek, {
+        layerName: "ANNOTATION",
+        colorNumber: 8,
+      });
+    }
   });
 
   const mainSheetPoints = mainParcelPoints.map(toSheet);
@@ -1310,9 +1327,10 @@ export function toDXF(
     coordinateRows.forEach((row) => {
       const rowBottom = rowTop - coordRowHeight;
       addDxfLine(writer, { x: tableX0, y: rowBottom }, { x: tableX1, y: rowBottom }, { layerName: "ANNOTATION" });
-      addCenteredDxfText(writer, tableX0 + (column1 - tableX0) / 2, rowTop - mm(2.85), mm(1.45), row.label, { layerName: "ANNOTATION" });
-      addCenteredDxfText(writer, column1 + (column2 - column1) / 2, rowTop - mm(2.85), mm(1.45), row.x, { layerName: "ANNOTATION" });
-      addCenteredDxfText(writer, column2 + (tableX1 - column2) / 2, rowTop - mm(2.85), mm(1.45), row.y, { layerName: "ANNOTATION" });
+      const rowCenterY = (rowTop + rowBottom) / 2 - mm(0.55);
+      addCenteredDxfText(writer, tableX0 + (column1 - tableX0) / 2, rowCenterY, mm(1.45), row.label, { layerName: "ANNOTATION" });
+      addCenteredDxfText(writer, column1 + (column2 - column1) / 2, rowCenterY, mm(1.45), row.x, { layerName: "ANNOTATION" });
+      addCenteredDxfText(writer, column2 + (tableX1 - column2) / 2, rowCenterY, mm(1.45), row.y, { layerName: "ANNOTATION" });
       rowTop = rowBottom;
     });
 
@@ -1322,7 +1340,7 @@ export function toDXF(
     addDxfLine(writer, { x: tableX1, y: areaBoxTop }, { x: tableX1, y: areaBoxBottom }, { layerName: "ANNOTATION" });
     addDxfLine(writer, { x: tableX1, y: areaBoxBottom }, { x: tableX0, y: areaBoxBottom }, { layerName: "ANNOTATION" });
     addDxfLine(writer, { x: tableX0, y: areaBoxBottom }, { x: tableX0, y: areaBoxTop }, { layerName: "ANNOTATION" });
-    addCenteredDxfText(writer, (tableX0 + tableX1) / 2, areaBoxTop - mm(4.1), mm(1.9), `ΕΜΒΑΔΟΝ ΟΙΚΟΠΕΔΟΥ (${coordinateLoopLabel}): Ε=${formatAreaForPlan(meta?.area)}ΤΜ`, { layerName: "ANNOTATION" });
+    addCenteredDxfText(writer, (tableX0 + tableX1) / 2, (areaBoxTop + areaBoxBottom) / 2 - mm(0.75), mm(1.9), `ΕΜΒΑΔΟΝ ΟΙΚΟΠΕΔΟΥ (${coordinateLoopLabel}): Ε=${formatAreaForPlan(meta?.area)}ΤΜ`, { layerName: "ANNOTATION" });
     y = areaBoxBottom - mm(4.5);
 
     const terms = meta?.buildingTerms;
