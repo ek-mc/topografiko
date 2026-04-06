@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Download } from "lucide-react";
+import CadMesh from "@/components/CadMesh";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
 import mainUseMap from "@shared/main-use-map.json";
@@ -23,15 +24,29 @@ import {
 } from "@/lib/topografiko";
 
 type ExportMode = "parcel" | "ot" | "full";
+
 interface ExportPageProps {
   initialKaek?: string;
 }
 
-function PlaceholderBlock({ title, children }: { title: string; children?: React.ReactNode }) {
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-muted/50 p-3 text-muted-foreground transition-colors">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide">{title}</div>
-      {children || <div className="h-16 rounded bg-muted" />}
+    <div className="rounded-xl border border-border bg-card p-3 text-sm transition-colors">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PlaceholderBlock({ title, height = "h-20" }: { title: string; height?: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-muted/40 p-3 transition-colors">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      <div className={`rounded-lg bg-muted/70 ${height}`} />
     </div>
   );
 }
@@ -40,6 +55,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
+
   const [parcel, setParcel] = useState<ParcelData | null>(null);
   const [teeData, setTeeData] = useState<TEEData | null>(null);
   const [teeCandidates, setTeeCandidates] = useState<TEEData[]>([]);
@@ -56,45 +72,45 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
   useEffect(() => {
     if (!initialKaek) return;
+
     (async () => {
       setLoading(true);
       const result = await fetchParcelByKaek(initialKaek);
       setParcel(result);
+
       if (result) {
         const candidates = await fetchTEECandidates(result.rings);
         setTeeCandidates(candidates);
         const tee = candidates[0] || null;
         setTeeData(tee);
+
         if (candidates.length) {
-          const blocks = await Promise.all(
-            candidates.map((candidate) => fetchParcelsInOT(candidate.rings))
+          const blocks = await Promise.all(candidates.map((candidate) => fetchParcelsInOT(candidate.rings)));
+          const merged = Array.from(new Map(blocks.flat().map((item) => [item.kaek, item])).values()).filter(
+            (item) => item.kaek !== result.kaek,
           );
-          const merged = Array.from(
-            new Map(blocks.flat().map((item) => [item.kaek, item])).values()
-          ).filter((item) => item.kaek !== result.kaek);
           const filtered = merged.filter((item) => {
-            const info = (mainUseMap as Record<
-              string,
-              { code: string; category: string; subcategory: string }
-            >)[item.mainUse];
+            const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
             const category = info?.category || "";
             const subcategory = info?.subcategory || "";
-            const isRoad =
-              category.includes("ΟΔΙΚΟ") ||
-              subcategory.includes("ΟΔΙΚΟ") ||
-              item.mainUse === "5100";
+            const isRoad = category.includes("ΟΔΙΚΟ") || subcategory.includes("ΟΔΙΚΟ") || item.mainUse === "5100";
             const isHuge = (item.area ?? 0) > 5000;
             return !isRoad && !isHuge;
           });
           setOtParcels(filtered);
           setContextParcels(filtered);
+        } else {
+          setOtParcels([]);
+          setContextParcels([]);
         }
       }
+
       setLoading(false);
     })();
   }, [initialKaek]);
 
   const includeBlock = mode !== "parcel";
+
   const previewParcels = useMemo(() => {
     if (!parcel) return [] as Array<{ kaek: string; rings: Point[][]; current: boolean }>;
     const blockParcels = otParcels.map((item) => ({
@@ -102,36 +118,43 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       rings: item.rings,
       current: false,
     }));
+
     return includeBlock
       ? [{ kaek: parcel.kaek, rings: parcel.rings, current: true }, ...blockParcels]
       : [{ kaek: parcel.kaek, rings: parcel.rings, current: true }];
   }, [parcel, otParcels, includeBlock]);
 
   const previewBounds = useMemo(() => {
-    const points = [...contextParcels, ...previewParcels].flatMap((p) =>
-      p.rings.flatMap((ring) => stripClosingPoint(ring))
-    );
+    const points = [...contextParcels, ...previewParcels].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
   }, [previewParcels, contextParcels]);
 
+  const coords = useMemo(
+    () =>
+      parcel
+        ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({
+            i: i + 1,
+            x: String(p.x),
+            y: String(p.y),
+          }))
+        : [],
+    [parcel],
+  );
+
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
+
     const parcels = previewParcels.map((p) => ({ kaek: p.kaek, rings: p.rings }));
     const base = includeBlock ? `${parcel.kaek}-ot` : parcel.kaek;
+
     if (format === "geojson") {
-      downloadText(
-        `${base}.geojson`,
-        toGeoJSON(base, parcels),
-        "application/geo+json;charset=utf-8"
-      );
+      downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
     }
+
     if (format === "kml") {
-      downloadText(
-        `${base}.kml`,
-        toKML(base, parcels),
-        "application/vnd.google-earth.kml+xml;charset=utf-8"
-      );
+      downloadText(`${base}.kml`, toKML(base, parcels), "application/vnd.google-earth.kml+xml;charset=utf-8");
     }
+
     if (format === "dxf") {
       downloadText(
         `${base}.dxf`,
@@ -145,26 +168,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           paperSize,
           scaleDenominator: 200,
         }),
-        "application/dxf;charset=utf-8"
+        "application/dxf;charset=utf-8",
       );
     }
   };
 
-  const coords = useMemo(
-    () =>
-      parcel
-        ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({
-            i: i + 1,
-            x: String(p.x),
-            y: String(p.y),
-          }))
-        : [],
-    [parcel]
-  );
-
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground transition-colors">
-      <div className="mx-auto w-full max-w-[1600px] space-y-6">
+      <div className="mx-auto w-full max-w-[1440px] space-y-6">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -237,9 +248,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     key={size}
                     type="button"
                     disabled={size !== "A3"}
-                    className={`rounded-xl px-4 py-2 ${
-                      size === "A3" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground/60"
-                    }`}
+                    className={`rounded-xl px-4 py-2 ${size === "A3" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground/60"}`}
                   >
                     {size}
                   </button>
@@ -271,22 +280,20 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               </div>
             </div>
 
-            <div className="overflow-auto rounded-2xl border border-border bg-muted/40 p-4 shadow-sm transition-colors">
-              <div
-                className="mx-auto min-w-[1400px] bg-card p-6 transition-colors"
-                style={{ aspectRatio: "420 / 297" }}
-              >
-                <div className="grid h-full grid-cols-[1fr_360px] grid-rows-[1fr_auto] gap-4 border border-border p-4">
-                  <div className="relative rounded-xl border border-border bg-muted/40 p-3 transition-colors">
-                    <div className="absolute right-4 top-4 flex flex-col items-center text-xs text-muted-foreground">
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors lg:p-5">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="space-y-4">
+                  <div className="relative overflow-hidden rounded-xl border border-border bg-muted/40 shadow-inner transition-colors">
+                    <div className="absolute right-4 top-4 z-10 flex flex-col items-center text-xs text-muted-foreground">
                       <div className="mb-1 font-semibold">Β</div>
                       <div className="h-10 w-px bg-neutral-500 dark:bg-neutral-300" />
                       <div className="-mt-10 h-0 w-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent border-b-neutral-500 dark:border-b-neutral-300" />
                     </div>
-                    <div className="absolute left-4 top-4 text-xs text-muted-foreground">Κλίμακα 1:200</div>
+                    <div className="absolute left-4 top-4 z-10 text-xs text-muted-foreground">Κλίμακα 1:200</div>
+
                     {previewBounds ? (
-                      <svg viewBox="0 0 320 320" className="h-full w-full">
-                        <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#fafafa"} />
+                      <svg viewBox="0 0 320 320" className="aspect-square w-full">
+                        <CadMesh patternId="export-preview-grid" isDark={isDark} />
                         {teeCandidates.flatMap((candidate) => candidate.rings).map((ring, index) => (
                           <path
                             key={index}
@@ -348,108 +355,103 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     ) : null}
                   </div>
 
-                  <div className="grid grid-rows-[auto_auto_1fr] gap-4">
-                    {showParcelData ? (
-                      <div className="rounded-xl border border-border bg-card p-3 text-sm transition-colors">
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Στοιχεία Οικοπέδου
-                        </div>
-                        <div className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1">
-                          <div>KAEK</div>
-                          <div>{parcel.kaek}</div>
-                          <div>Καλλικρατικός Δήμος</div>
-                          <div>{teeData?.municipality || "—"}</div>
-                          <div>Ο.Τ.</div>
-                          <div>{teeData?.otNumber || "—"}</div>
-                          <div>Εμβαδό</div>
-                          <div>{parcel.area?.toFixed(2) || "—"} m²</div>
-                          <div>Περίμετρος</div>
-                          <div>{parcel.perimeter?.toFixed(2) || "—"} m</div>
-                        </div>
+                  {mode === "full" ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-xs uppercase tracking-wide text-muted-foreground">
+                        Visual placeholder for additional plan overlays
                       </div>
-                    ) : null}
-
-                    {showCoords ? (
-                      <div className="rounded-xl border border-border bg-card p-3 text-xs transition-colors">
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Συντεταγμένες Κορυφών
-                        </div>
-                        <div className="grid grid-cols-[40px_1fr_1fr] gap-x-2 gap-y-1">
-                          <div className="font-medium">#</div>
-                          <div className="font-medium">X</div>
-                          <div className="font-medium">Y</div>
-                          {coords.slice(0, 8).map((row) => (
-                            <Fragment key={row.i}>
-                              <div>{row.i}</div>
-                              <div>{row.x}</div>
-                              <div>{row.y}</div>
-                            </Fragment>
-                          ))}
-                        </div>
+                      <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-xs uppercase tracking-wide text-muted-foreground">
+                        Visual placeholder for imagery or regulatory inset
                       </div>
-                    ) : null}
-
-                    <div className="grid gap-3">
-                      {showLegend ? (
-                        <PlaceholderBlock title="Υπόμνημα / Layers">
-                          <div className="space-y-1 text-xs">
-                            <div>parcel-boundary</div>
-                            <div>ot-boundary</div>
-                            <div>adjacent-blocks</div>
-                            <div>north-arrow / scale</div>
-                            <div>grey-placeholders</div>
-                          </div>
-                        </PlaceholderBlock>
-                      ) : null}
-                      {showTerms ? <PlaceholderBlock title="Όροι Δόμησης / Πολεοδομικά Στοιχεία" /> : null}
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-[1fr_320px] gap-4">
-                    <div className="grid gap-4">
-                      {mode === "full" ? (
-                        <div className="grid grid-cols-2 gap-4">
-                          <PlaceholderBlock title="Ρυμοτομικές Γραμμές" />
-                          <PlaceholderBlock title="Οικοδομικές Γραμμές / Πρασιές" />
-                        </div>
-                      ) : null}
-                      {mode === "full" ? (
-                        <div className="grid grid-cols-2 gap-4">
-                          <PlaceholderBlock title="Απόσπασμα Ρυμοτομικού" />
-                          <PlaceholderBlock title="Φωτογραφική Απεικόνιση / Notes" />
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {showTitleBlock ? (
-                      <div className="rounded-xl border border-border bg-card p-3 text-xs transition-colors">
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Title Block
-                        </div>
-                        <div className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1">
-                          <div>Σχέδιο</div>
-                          <div>Τοπογραφικό Διάγραμμα</div>
-                          <div>KAEK</div>
-                          <div>{parcel.kaek}</div>
-                          <div>Ο.Τ.</div>
-                          <div>{teeData?.otNumber || "—"}</div>
-                          <div>Δήμος</div>
-                          <div>{teeData?.municipality || "—"}</div>
-                          <div>Κλίμακα</div>
-                          <div>1:200</div>
-                          <div>Ημερομηνία</div>
-                          <div>{new Date().toLocaleDateString("el-GR")}</div>
-                          <div>Μελετητής</div>
-                          <div className="text-muted-foreground/70">grey placeholder</div>
-                          <div>Έργο</div>
-                          <div className="text-muted-foreground/70">grey placeholder</div>
-                          <div>Θέση</div>
-                          <div className="text-muted-foreground/70">grey placeholder</div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                  ) : null}
                 </div>
+
+                <aside className="flex flex-col gap-3 xl:sticky xl:top-6">
+                  {showParcelData ? (
+                    <Panel title="Στοιχεία Οικοπέδου">
+                      <div className="grid grid-cols-[132px_1fr] gap-x-3 gap-y-1 text-sm">
+                        <div className="text-muted-foreground">KAEK</div>
+                        <div>{parcel.kaek}</div>
+                        <div className="text-muted-foreground">Καλλικρατικός Δήμος</div>
+                        <div>{teeData?.municipality || "—"}</div>
+                        <div className="text-muted-foreground">Ο.Τ.</div>
+                        <div>{teeData?.otNumber || "—"}</div>
+                        <div className="text-muted-foreground">Εμβαδό</div>
+                        <div>{parcel.area?.toFixed(2) || "—"} m²</div>
+                        <div className="text-muted-foreground">Περίμετρος</div>
+                        <div>{parcel.perimeter?.toFixed(2) || "—"} m</div>
+                      </div>
+                    </Panel>
+                  ) : null}
+
+                  {showCoords ? (
+                    <Panel title="Συντεταγμένες Κορυφών">
+                      <div className="grid grid-cols-[32px_1fr_1fr] gap-x-2 gap-y-1 text-xs">
+                        <div className="font-medium text-muted-foreground">#</div>
+                        <div className="font-medium text-muted-foreground">X</div>
+                        <div className="font-medium text-muted-foreground">Y</div>
+                        {coords.slice(0, 8).map((row) => (
+                          <Fragment key={row.i}>
+                            <div>{row.i}</div>
+                            <div>{row.x}</div>
+                            <div>{row.y}</div>
+                          </Fragment>
+                        ))}
+                      </div>
+                    </Panel>
+                  ) : null}
+
+                  {showLegend ? (
+                    <Panel title="Υπόμνημα / Layers">
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <div>parcel-boundary</div>
+                        <div>ot-boundary</div>
+                        <div>adjacent-blocks</div>
+                        <div>north-arrow / scale</div>
+                        <div>cad-mesh background</div>
+                      </div>
+                    </Panel>
+                  ) : null}
+
+                  {showTerms ? (
+                    <PlaceholderBlock title="Όροι Δόμησης / Πολεοδομικά Στοιχεία" height="h-28" />
+                  ) : null}
+
+                  {mode === "full" ? (
+                    <>
+                      <PlaceholderBlock title="Ρυμοτομικές Γραμμές" height="h-16" />
+                      <PlaceholderBlock title="Οικοδομικές Γραμμές / Πρασιές" height="h-16" />
+                      <PlaceholderBlock title="Απόσπασμα Ρυμοτομικού" height="h-16" />
+                      <PlaceholderBlock title="Φωτογραφική Απεικόνιση / Notes" height="h-16" />
+                    </>
+                  ) : null}
+
+                  {showTitleBlock ? (
+                    <Panel title="Title Block">
+                      <div className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 text-xs">
+                        <div className="text-muted-foreground">Σχέδιο</div>
+                        <div>Τοπογραφικό Διάγραμμα</div>
+                        <div className="text-muted-foreground">KAEK</div>
+                        <div>{parcel.kaek}</div>
+                        <div className="text-muted-foreground">Ο.Τ.</div>
+                        <div>{teeData?.otNumber || "—"}</div>
+                        <div className="text-muted-foreground">Δήμος</div>
+                        <div>{teeData?.municipality || "—"}</div>
+                        <div className="text-muted-foreground">Κλίμακα</div>
+                        <div>1:200</div>
+                        <div className="text-muted-foreground">Ημερομηνία</div>
+                        <div>{new Date().toLocaleDateString("el-GR")}</div>
+                        <div className="text-muted-foreground">Μελετητής</div>
+                        <div className="text-muted-foreground/70">grey placeholder</div>
+                        <div className="text-muted-foreground">Έργο</div>
+                        <div className="text-muted-foreground/70">grey placeholder</div>
+                        <div className="text-muted-foreground">Θέση</div>
+                        <div className="text-muted-foreground/70">grey placeholder</div>
+                      </div>
+                    </Panel>
+                  ) : null}
+                </aside>
               </div>
             </div>
           </section>
