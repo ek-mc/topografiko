@@ -198,14 +198,27 @@ export async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string 
   })).filter((item: NeighborParcel) => !currentKaek || item.kaek !== currentKaek);
 }
 
-export function downloadText(filename: string, content: string, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([content], { type: mime });
+export function downloadText(filename: string, content: string, mime = "text/plain;charset=utf-8", addBom = false) {
+  const payload = addBom ? `\ufeff${content}` : content;
+  const blob = new Blob([payload], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function encodeDxfText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/[\r\n]+/g, " ")
+    .split("")
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code <= 126 ? char : `\\U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
+    })
+    .join("");
 }
 
 export function toGeoJSON(name: string, parcels: { kaek: string; rings: Point[][] }[]) {
@@ -314,8 +327,8 @@ export function toDXF(
     writer.addLine(point3d(nx, ny + 3, 0), point3d(nx - 4, ny - 5, 0)); // left side
     writer.addLine(point3d(nx, ny + 3, 0), point3d(nx + 4, ny - 5, 0)); // right side
     writer.addLine(point3d(nx - 4, ny - 5, 0), point3d(nx + 4, ny - 5, 0)); // base
-    writer.addText(point3d(nx - 2, ny + 6, 0), 3, 'N');
-    writer.addText(point3d(nx + 10, ny, 0), 2.5, `1:${scaleDenominator}`);
+    writer.addText(point3d(nx - 2, ny + 6, 0), 3, encodeDxfText("Β"));
+    writer.addText(point3d(nx + 10, ny, 0), 2.5, encodeDxfText(`1:${scaleDenominator}`));
 
     // coordinate frame ticks with crosshairs and rounded coords
     const tickStep = 50; // mm on paper
@@ -342,7 +355,7 @@ export function toDXF(
       writer.addLine(point3d(sx, drawWin.y1 - 3, 0), point3d(sx, drawWin.y1 + 3, 0));
       // Coordinates - ensure full number is shown
       const xText = String(Math.round(roundedX));
-      writer.addText(point3d(sx - 12, drawWin.y0 + 8, 0), 2.2, xText);
+      writer.addText(point3d(sx - 12, drawWin.y0 + 8, 0), 2.2, encodeDxfText(xText));
     }
     
     for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
@@ -364,7 +377,7 @@ export function toDXF(
       writer.addLine(point3d(drawWin.x1, sy - 3, 0), point3d(drawWin.x1, sy + 3, 0));
       // Coordinates - ensure full number is shown
       const yText = String(Math.round(roundedY));
-      writer.addText(point3d(drawWin.x0 + 4, sy + 2, 0), 2.2, yText);
+      writer.addText(point3d(drawWin.x0 + 4, sy + 2, 0), 2.2, encodeDxfText(yText));
     }
 
     if (meta?.includeTitleBlock) {
@@ -384,16 +397,16 @@ export function toDXF(
       ];
       let y = y1 - 10;
       lines.forEach(([label, value]) => {
-        writer.addText(point3d(x0 + 4, y, 0), 2.2, label);
-        writer.addText(point3d(x0 + 34, y, 0), 2.2, value);
+        writer.addText(point3d(x0 + 4, y, 0), 2.2, encodeDxfText(label));
+        writer.addText(point3d(x0 + 34, y, 0), 2.2, encodeDxfText(value));
         y -= 8;
       });
-      writer.addText(point3d(x0 + 4, y - 2, 0), 2.2, 'Συντεταγμένες ΕΓΣΑ87');
+      writer.addText(point3d(x0 + 4, y - 2, 0), 2.2, encodeDxfText("Συντεταγμένες ΕΓΣΑ87"));
       y -= 8;
       (meta.coords || []).slice(0, 20).forEach((row) => {
-        writer.addText(point3d(x0 + 4, y, 0), 1.8, `${row.i}`);
-        writer.addText(point3d(x0 + 12, y, 0), 1.8, row.x);
-        writer.addText(point3d(x0 + 60, y, 0), 1.8, row.y);
+        writer.addText(point3d(x0 + 4, y, 0), 1.8, encodeDxfText(`${row.i}`));
+        writer.addText(point3d(x0 + 12, y, 0), 1.8, encodeDxfText(row.x));
+        writer.addText(point3d(x0 + 60, y, 0), 1.8, encodeDxfText(row.y));
         y -= 5;
       });
     }

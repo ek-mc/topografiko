@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Download } from "lucide-react";
-import CadMesh from "@/components/CadMesh";
+import NorthArrow from "@/components/NorthArrow";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
 import mainUseMap from "@shared/main-use-map.json";
@@ -169,6 +169,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           scaleDenominator: 200,
         }),
         "application/dxf;charset=utf-8",
+        true,
       );
     }
   };
@@ -243,7 +244,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               </div>
 
               <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                {(["A3", "A4", "A2"] as const).map((size) => (
+                {(["A4", "A3", "A1"] as const).map((size) => (
                   <button
                     key={size}
                     type="button"
@@ -265,15 +266,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => download("kml")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  disabled
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground/50 opacity-60"
                 >
                   <Download className="h-4 w-4" />KML
                 </button>
                 <button
                   type="button"
-                  onClick={() => download("geojson")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  disabled
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground/50 opacity-60"
                 >
                   <Download className="h-4 w-4" />GeoJSON
                 </button>
@@ -284,16 +285,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="space-y-4">
                   <div className="relative overflow-hidden rounded-xl border border-border bg-muted/40 shadow-inner transition-colors">
-                    <div className="absolute right-4 top-4 z-10 flex flex-col items-center text-xs text-muted-foreground">
-                      <div className="mb-1 font-semibold">Β</div>
-                      <div className="h-10 w-px bg-neutral-500 dark:bg-neutral-300" />
-                      <div className="-mt-10 h-0 w-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent border-b-neutral-500 dark:border-b-neutral-300" />
-                    </div>
                     <div className="absolute left-4 top-4 z-10 text-xs text-muted-foreground">Κλίμακα 1:200</div>
 
                     {previewBounds ? (
                       <svg viewBox="0 0 320 320" className="aspect-square w-full">
-                        <CadMesh patternId="export-preview-grid" isDark={isDark} />
+                        <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
+                        <NorthArrow isDark={isDark} />
                         {teeCandidates.flatMap((candidate) => candidate.rings).map((ring, index) => (
                           <path
                             key={index}
@@ -409,7 +406,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div>ot-boundary</div>
                         <div>adjacent-blocks</div>
                         <div>north-arrow / scale</div>
-                        <div>cad-mesh background</div>
+                        <div>parcel context</div>
                       </div>
                     </Panel>
                   ) : null}

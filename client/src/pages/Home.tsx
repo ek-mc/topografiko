@@ -2,7 +2,6 @@ import { Search, Download, Copy, Check, House, Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import proj4 from "proj4";
-import CadMesh from "@/components/CadMesh";
 import NorthArrow from "@/components/NorthArrow";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -681,7 +680,7 @@ export default function Home({ initialKaek }: HomeProps) {
               </div>
 
               <svg viewBox="0 0 320 320" className={`w-full ${teeCandidates.length > 1 ? "max-h-[720px]" : "max-h-[520px]"}`}>
-                <CadMesh patternId="parcel-shape-grid" isDark={isDark} />
+                <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
                 <NorthArrow isDark={isDark} />
                 <path d={path} fill={isDark ? "rgba(96,165,250,0.12)" : "rgba(59,130,246,0.06)"} stroke={isDark ? "#93c5fd" : "#60a5fa"} strokeWidth="2.2" />
                 {primaryRing.map((point, index) => {
@@ -832,7 +831,7 @@ export default function Home({ initialKaek }: HomeProps) {
                 <div className="mt-6">
                   <h3 className="mb-2 text-sm font-semibold text-foreground">Χάρτης Ο.Τ.</h3>
                                     <svg viewBox="0 0 320 320" className="w-full max-h-[520px] rounded-xl border border-border bg-muted/40 shadow-inner">
-                    <CadMesh patternId="ot-map-grid" isDark={isDark} />
+                    <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
                     <NorthArrow isDark={isDark} />
                     {teeCandidates.map((candidate, candidateIndex) => candidate.rings.map((ring, index) => {
                       const otPath = pathFromRingWithBounds(ring, blockBounds);
@@ -920,7 +919,7 @@ export default function Home({ initialKaek }: HomeProps) {
               {neighbors.length > 0 && (
                 <div className="mt-6">
                   <h3 className="mb-2 text-sm font-semibold text-foreground">Οικόπεδα μέσα στο Ο.Τ.</h3>
-                  <div className="max-h-64 overflow-auto rounded-xl border border-border">
+                  <div className="rounded-xl border border-border">
                     <table className="w-full border-collapse text-sm">
                       <thead>
                         <tr className="bg-muted/50 text-muted-foreground">
