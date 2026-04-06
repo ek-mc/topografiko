@@ -84,12 +84,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         const tee = candidates[0] || null;
         setTeeData(tee);
 
-        if (candidates.length) {
-          const blocks = await Promise.all(candidates.map((candidate) => fetchParcelsInOT(candidate.rings)));
-          const merged = Array.from(new Map(blocks.flat().map((item) => [item.kaek, item])).values()).filter(
-            (item) => item.kaek !== result.kaek,
-          );
-          const filtered = merged.filter((item) => {
+        if (tee?.rings?.length) {
+          const selectedOtParcels = await fetchParcelsInOT(tee.rings, result.kaek);
+          const filtered = selectedOtParcels.filter((item) => {
             const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
             const category = info?.category || "";
             const subcategory = info?.subcategory || "";

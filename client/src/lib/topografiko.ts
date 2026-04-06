@@ -1,5 +1,5 @@
 import proj4 from "proj4";
-import { DxfWriter, point3d } from "@tarikjabiri/dxf";
+import { DxfWriter, Units, point3d } from "@tarikjabiri/dxf";
 
 export type Point = { x: number; y: number };
 export type ParcelData = {
@@ -274,16 +274,20 @@ export function downloadText(filename: string, content: string, mime = "text/pla
   URL.revokeObjectURL(url);
 }
 
+const DXF_TEXT_STYLE = "GREEK";
+
 function encodeDxfText(value: string) {
   return value
-    .replace(/\\/g, "\\\\")
-    .replace(/[\r\n]+/g, " ")
-    .split("")
-    .map((char) => {
-      const code = char.charCodeAt(0);
-      return code >= 32 && code <= 126 ? char : `\\U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
-    })
-    .join("");
+    .normalize("NFC")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function addDxfText(writer: DxfWriter, x: number, y: number, height: number, value: string) {
+  const entity = writer.addText(point3d(x, y, 0), height, encodeDxfText(value));
+  entity.textStyle = DXF_TEXT_STYLE;
+  return entity;
 }
 
 export function toGeoJSON(name: string, parcels: { kaek: string; rings: Point[][] }[]) {
@@ -313,6 +317,13 @@ export function toDXF(
   meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[]; paperSize?: "A4" | "A3" | "A1"; scaleDenominator?: number },
 ) {
   const writer = new DxfWriter();
+  writer.setUnits(Units.Millimeters);
+  writer.setVariable("$DWGCODEPAGE", { 3: "ANSI_1253" });
+
+  const greekStyle = writer.tables.addStyle(DXF_TEXT_STYLE);
+  greekStyle.fontFileName = "arial.ttf";
+  greekStyle.lastHeightUsed = 2.5;
+
   const projectedParcels = parcels.map((parcel) => ({
     ...parcel,
     rings: parcel.rings.map((ring) => ring.map((p) => {
@@ -336,15 +347,15 @@ export function toDXF(
 
   const mainParcel = projectedParcels[0];
   const parcelPoints = stripClosingPoint(mainParcel.rings[0]);
-  
+
   if (parcelPoints.length) {
-    const bounds = boundsFromPoints(parcelPoints);
+    const allProjectedPoints = projectedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
+    const bounds = boundsFromPoints(allProjectedPoints.length ? allProjectedPoints : parcelPoints);
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
-    
-    // Calculate proper scale for 1:200 or fit-to-window
-    const parcelWidth = bounds.maxX - bounds.minX;
-    const parcelHeight = bounds.maxY - bounds.minY;
+
+    const parcelWidth = Math.max(bounds.maxX - bounds.minX, 1);
+    const parcelHeight = Math.max(bounds.maxY - bounds.minY, 1);
     const winWidth = drawWin.x1 - drawWin.x0;
     const winHeight = drawWin.y1 - drawWin.y0;
     const fitScale = Math.min(winWidth / parcelWidth, winHeight / parcelHeight) * 0.85;
@@ -361,7 +372,6 @@ export function toDXF(
       y: centerY + (sy - windowCenterY) / scale,
     });
 
-    // A3 frame and drawing window
     writer.addLine(point3d(0, 0, 0), point3d(paper.width, 0, 0));
     writer.addLine(point3d(paper.width, 0, 0), point3d(paper.width, paper.height, 0));
     writer.addLine(point3d(paper.width, paper.height, 0), point3d(0, paper.height, 0));
@@ -372,72 +382,64 @@ export function toDXF(
     writer.addLine(point3d(drawWin.x0, drawWin.y1, 0), point3d(drawWin.x0, drawWin.y0, 0));
     writer.addLine(point3d(drawWin.x1, 0, 0), point3d(drawWin.x1, paper.height, 0));
 
-    projectedParcels.forEach((parcel) => {
+    projectedParcels.forEach((parcel, parcelIndex) => {
       const pts = stripClosingPoint(parcel.rings[0]).map(toSheet);
       if (pts.length < 2) return;
       pts.forEach((start, index) => {
         const end = pts[(index + 1) % pts.length];
         writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0));
       });
+
+      const sourcePoints = stripClosingPoint(parcel.rings[0]);
+      if (sourcePoints.length && parcelIndex < 12) {
+        const centroidX = sourcePoints.reduce((sum, point) => sum + point.x, 0) / sourcePoints.length;
+        const centroidY = sourcePoints.reduce((sum, point) => sum + point.y, 0) / sourcePoints.length;
+        const labelPoint = toSheet({ x: centroidX, y: centroidY });
+        addDxfText(writer, labelPoint.x - 8, labelPoint.y, parcelIndex === 0 ? 2.2 : 1.8, parcel.kaek);
+      }
     });
 
-    // north arrow symbol (triangle with line)
     const nx = drawWin.x0 + 12;
     const ny = drawWin.y1 - 15;
-    writer.addLine(point3d(nx, ny - 12, 0), point3d(nx, ny + 3, 0));
-    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx - 4, ny - 5, 0));
-    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx + 4, ny - 5, 0));
-    writer.addLine(point3d(nx - 4, ny - 5, 0), point3d(nx + 4, ny - 5, 0));
-    writer.addText(point3d(nx - 2, ny + 6, 0), 3, encodeDxfText("Β"));
+    writer.addLine(point3d(nx, ny - 12, 0), point3d(nx, ny + 2, 0));
+    writer.addLine(point3d(nx, ny + 2, 0), point3d(nx - 4, ny - 6, 0));
+    writer.addLine(point3d(nx, ny + 2, 0), point3d(nx + 4, ny - 6, 0));
+    writer.addLine(point3d(nx - 4, ny - 6, 0), point3d(nx + 4, ny - 6, 0));
+    addDxfText(writer, nx - 2.2, ny + 6, 3, "Β");
 
-    // coordinate frame ticks with crosshairs and rounded coords
-    const tickStep = 50; // mm on paper
-    const roundTo = 50; // round world coords to nearest 50
+    const tickStep = 50;
+    const roundTo = 50;
     const seenX = new Set<number>();
     const seenY = new Set<number>();
-    
+
     for (let sx = drawWin.x0; sx <= drawWin.x1 + 0.1; sx += tickStep) {
       const world = toWorld(sx, drawWin.y0);
       const roundedX = Math.round(world.x / roundTo) * roundTo;
-      
-      // Skip duplicates
       if (seenX.has(roundedX)) continue;
       seenX.add(roundedX);
-      
-      // Ticks
+
       writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 4, 0));
       writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 4, 0));
-      // Cross (+) at bottom
       writer.addLine(point3d(sx - 3, drawWin.y0, 0), point3d(sx + 3, drawWin.y0, 0));
       writer.addLine(point3d(sx, drawWin.y0 - 3, 0), point3d(sx, drawWin.y0 + 3, 0));
-      // Cross (+) at top
       writer.addLine(point3d(sx - 3, drawWin.y1, 0), point3d(sx + 3, drawWin.y1, 0));
       writer.addLine(point3d(sx, drawWin.y1 - 3, 0), point3d(sx, drawWin.y1 + 3, 0));
-      // Coordinates - ensure full number is shown
-      const xText = String(Math.round(roundedX));
-      writer.addText(point3d(sx - 12, drawWin.y0 + 8, 0), 2.2, encodeDxfText(xText));
+      addDxfText(writer, sx - 12, drawWin.y0 + 8, 2.2, String(Math.round(roundedX)));
     }
-    
+
     for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
       const world = toWorld(drawWin.x0, sy);
       const roundedY = Math.round(world.y / roundTo) * roundTo;
-      
-      // Skip duplicates
       if (seenY.has(roundedY)) continue;
       seenY.add(roundedY);
-      
-      // Ticks
+
       writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 4, sy, 0));
       writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 4, sy, 0));
-      // Cross (+) at left
       writer.addLine(point3d(drawWin.x0 - 3, sy, 0), point3d(drawWin.x0 + 3, sy, 0));
       writer.addLine(point3d(drawWin.x0, sy - 3, 0), point3d(drawWin.x0, sy + 3, 0));
-      // Cross (+) at right
       writer.addLine(point3d(drawWin.x1 - 3, sy, 0), point3d(drawWin.x1 + 3, sy, 0));
       writer.addLine(point3d(drawWin.x1, sy - 3, 0), point3d(drawWin.x1, sy + 3, 0));
-      // Coordinates - ensure full number is shown
-      const yText = String(Math.round(roundedY));
-      writer.addText(point3d(drawWin.x0 + 4, sy + 2, 0), 2.2, encodeDxfText(yText));
+      addDxfText(writer, drawWin.x0 + 4, sy + 2, 2.2, String(Math.round(roundedY)));
     }
 
     if (meta?.includeTitleBlock) {
@@ -445,28 +447,45 @@ export function toDXF(
       const x1 = paper.width - 6;
       const y0 = 6;
       const y1 = paper.height - 6;
+      const dateText = new Intl.DateTimeFormat("el-GR").format(new Date());
+
       writer.addLine(point3d(x0, y0, 0), point3d(x1, y0, 0));
       writer.addLine(point3d(x1, y0, 0), point3d(x1, y1, 0));
       writer.addLine(point3d(x1, y1, 0), point3d(x0, y1, 0));
       writer.addLine(point3d(x0, y1, 0), point3d(x0, y0, 0));
+
+      addDxfText(writer, x0 + 4, y1 - 8, 3, "ΤΟΠΟΓΡΑΦΙΚΟ ΔΙΑΓΡΑΜΜΑ");
+      writer.addLine(point3d(x0, y1 - 12, 0), point3d(x1, y1 - 12, 0));
+
       const lines = [
         ["Μελετητής", "-"],
         ["Έργο", "Τοπογραφικό Διάγραμμα"],
-        ["Θέση", `Ο.Τ. ${meta.ot || "***"}, Δήμου ${meta.municipality || "-"}`],
+        ["Θέση", `Ο.Τ. ${meta.ot || "-"}, Δήμος ${meta.municipality || "-"}`],
         ["KAEK", meta.kaek || "-"],
-      ];
-      let y = y1 - 10;
+        ["Κλίμακα", `1:${scaleDenominator}`],
+        ["Ημερομηνία", dateText],
+        ["Σύστημα αναφοράς", "ΕΓΣΑ '87"],
+      ] as const;
+
+      let y = y1 - 20;
       lines.forEach(([label, value]) => {
-        writer.addText(point3d(x0 + 4, y, 0), 2.2, encodeDxfText(label));
-        writer.addText(point3d(x0 + 34, y, 0), 2.2, encodeDxfText(value));
+        addDxfText(writer, x0 + 4, y, 2.2, label);
+        addDxfText(writer, x0 + 40, y, 2.2, value);
         y -= 8;
       });
-      writer.addText(point3d(x0 + 4, y - 2, 0), 2.2, encodeDxfText("Συντεταγμένες ΕΓΣΑ87"));
+
+      writer.addLine(point3d(x0, y + 3, 0), point3d(x1, y + 3, 0));
+      addDxfText(writer, x0 + 4, y - 2, 2.2, "Συντεταγμένες κορυφών ΕΓΣΑ '87");
       y -= 8;
+      addDxfText(writer, x0 + 4, y, 1.8, "#");
+      addDxfText(writer, x0 + 12, y, 1.8, "X");
+      addDxfText(writer, x0 + 62, y, 1.8, "Y");
+      y -= 5;
+
       (meta.coords || []).slice(0, 20).forEach((row) => {
-        writer.addText(point3d(x0 + 4, y, 0), 1.8, encodeDxfText(`${row.i}`));
-        writer.addText(point3d(x0 + 12, y, 0), 1.8, encodeDxfText(row.x));
-        writer.addText(point3d(x0 + 60, y, 0), 1.8, encodeDxfText(row.y));
+        addDxfText(writer, x0 + 4, y, 1.8, `${row.i}`);
+        addDxfText(writer, x0 + 12, y, 1.8, row.x);
+        addDxfText(writer, x0 + 62, y, 1.8, row.y);
         y -= 5;
       });
     }

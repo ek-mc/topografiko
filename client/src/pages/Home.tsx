@@ -469,13 +469,14 @@ export default function Home({ initialKaek }: HomeProps) {
   const blockBounds = useMemo(() => {
     const allPoints = [
       ...(teeData?.rings?.flatMap((ring) => stripClosingPoint(ring)) ?? []),
+      ...neighbors.flatMap((neighbor) => neighbor.rings.flatMap((ring) => stripClosingPoint(ring))),
       ...primaryRing,
     ];
     if (!allPoints.length) return null;
     const xs = allPoints.map((p) => p.x);
     const ys = allPoints.map((p) => p.y);
     return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-  }, [primaryRing, teeData]);
+  }, [neighbors, primaryRing, teeData]);
 
   useEffect(() => {
     if (initialKaek) {
@@ -584,14 +585,8 @@ export default function Home({ initialKaek }: HomeProps) {
       const nearbyOTs = tee?.rings?.length && tee?.otNumber ? await fetchNearbyOTPolygons(tee.rings, tee.otNumber) : [];
       setOtContext(nearbyOTs);
       
-      // If multiple OT candidates exist, gather parcels from all of them
-      const candidateParcelLists = candidates.length
-        ? await Promise.all(candidates.map((candidate) => fetchParcelsInOT(candidate.rings, undefined)))
-        : [];
-      const candidateParcels = candidateParcelLists.flat();
-      const dedupedCandidateParcels = Array.from(new Map(candidateParcels.map((item) => [item.kaek, item])).values());
-      const parcelList = candidates.length
-        ? dedupedCandidateParcels.filter((item) => item.kaek !== result.kaek)
+      const parcelList = tee?.rings?.length
+        ? await fetchParcelsInOT(tee.rings, result.kaek)
         : await fetchNeighbors(result.rings, result.kaek);
       const filteredParcels = parcelList.filter((item) => {
         const mainUseInfo = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
@@ -844,6 +839,47 @@ export default function Home({ initialKaek }: HomeProps) {
                           strokeWidth="1.5"
                           strokeDasharray="4 4"
                         />
+                      );
+                    })}
+                    {neighbors.map((neighbor) => {
+                      const neighborPath = pathFromRingWithBounds(neighbor.rings[0], blockBounds);
+                      const labelPoint = projectPoint(centroid(neighbor.rings[0]), blockBounds);
+                      return (
+                        <g key={neighbor.kaek}>
+                          <path
+                            d={neighborPath}
+                            fill={isDark ? "rgba(148,163,184,0.14)" : "rgba(148,163,184,0.10)"}
+                            stroke={isDark ? "#cbd5e1" : "#94a3b8"}
+                            strokeWidth="1.1"
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setQuery(neighbor.kaek);
+                              navigate(`/o/${neighbor.kaek}`);
+                              setTimeout(() => {
+                                const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
+                                button?.click();
+                              }, 10);
+                            }}
+                          />
+                          <text
+                            x={labelPoint.x}
+                            y={labelPoint.y + 4}
+                            fontSize="7.5"
+                            textAnchor="middle"
+                            fill={isDark ? "#e2e8f0" : "#475569"}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setQuery(neighbor.kaek);
+                              navigate(`/o/${neighbor.kaek}`);
+                              setTimeout(() => {
+                                const button = document.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null;
+                                button?.click();
+                              }, 10);
+                            }}
+                          >
+                            {neighbor.kaek}
+                          </text>
+                        </g>
                       );
                     })}
                     <path
