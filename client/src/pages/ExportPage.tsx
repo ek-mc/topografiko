@@ -73,6 +73,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [contextOts, setContextOts] = useState<TEEData[]>([]);
   const [officialRoadNames, setOfficialRoadNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [contextLoading, setContextLoading] = useState(false);
   const [mode, setMode] = useState<ExportMode>("parcel");
   const [showCoords, setShowCoords] = useState(true);
   const [showParcelData, setShowParcelData] = useState(true);
@@ -85,75 +86,121 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   useEffect(() => {
     if (!initialKaek) return;
 
-    (async () => {
-      setLoading(true);
-      const result = await fetchParcelByKaek(initialKaek);
-      setParcel(result);
+    let cancelled = false;
 
-      if (result) {
-        const [candidates, terms, roadLabels] = await Promise.all([
-          fetchTEECandidates(result.rings),
-          fetchBuildingTerms(result.rings),
-          result.officialRingsGgrs87?.length ? fetchOfficialRoadLabels(result.officialRingsGgrs87) : Promise.resolve([]),
-        ]);
+    const isDisplayableParcel = (item: NeighborParcel) => {
+      const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
+      const category = info?.category || "";
+      const subcategory = info?.subcategory || "";
+      const isRoad = category.includes("ΟΔΙΚΟ") || subcategory.includes("ΟΔΙΚΟ") || item.mainUse === "5100";
+      const isHuge = (item.area ?? 0) > 5000;
+      return !isRoad && !isHuge;
+    };
+
+    const load = async () => {
+      setLoading(true);
+      setContextLoading(false);
+      setParcel(null);
+      setTeeData(null);
+      setTeeCandidates([]);
+      setBuildingTerms(null);
+      setOtParcels([]);
+      setContextParcels([]);
+      setContextOts([]);
+      setOfficialRoadNames([]);
+
+      try {
+        const result = await fetchParcelByKaek(initialKaek);
+        if (cancelled) return;
+        setParcel(result);
+
+        if (!result) {
+          setLoading(false);
+          return;
+        }
+
+        const candidatesPromise = fetchTEECandidates(result.rings).catch(() => []);
+        const termsPromise = fetchBuildingTerms(result.rings).catch(() => null);
+        const roadLabelsPromise = result.officialRingsGgrs87?.length
+          ? fetchOfficialRoadLabels(result.officialRingsGgrs87).catch(() => [])
+          : Promise.resolve([]);
+
+        const candidates = await candidatesPromise;
+        if (cancelled) return;
         setTeeCandidates(candidates);
-        setBuildingTerms(terms);
-        setOfficialRoadNames(Array.from(new Set(roadLabels.map((item) => item.name))).slice(0, 3));
         const tee = candidates[0] || null;
         setTeeData(tee);
+        setLoading(false);
 
-        if (tee?.rings?.length) {
-          const [selectedOtParcels, surroundingOts] = await Promise.all([
-            fetchParcelsInOT(tee.rings, result.kaek),
-            fetchContextOTs(tee.rings, tee.otNumber),
-          ]);
+        void termsPromise.then((terms) => {
+          if (cancelled) return;
+          setBuildingTerms(terms);
+        });
 
-          const isDisplayableParcel = (item: NeighborParcel) => {
-            const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
-            const category = info?.category || "";
-            const subcategory = info?.subcategory || "";
-            const isRoad = category.includes("ΟΔΙΚΟ") || subcategory.includes("ΟΔΙΚΟ") || item.mainUse === "5100";
-            const isHuge = (item.area ?? 0) > 5000;
-            return !isRoad && !isHuge;
-          };
+        void roadLabelsPromise.then((roadLabels) => {
+          if (cancelled) return;
+          setOfficialRoadNames(Array.from(new Set(roadLabels.map((item) => item.name))).slice(0, 3));
+        });
 
-          const filteredCurrentOt = selectedOtParcels.filter(isDisplayableParcel);
-          const adjacent = filterAdjacentParcels(result.rings, filteredCurrentOt).map((item) => ({
-            ...item,
-            relation: "adjacent" as const,
-          }));
-          const adjacentKaeks = new Set(adjacent.map((item) => item.kaek));
-
-          const surroundingParcelGroups = await Promise.all(
-            surroundingOts.map((ot) => fetchParcelsInOT(ot.rings)),
-          );
-          const opposite = surroundingParcelGroups
-            .flat()
-            .filter(isDisplayableParcel)
-            .filter((item) => item.kaek !== result.kaek && !adjacentKaeks.has(item.kaek))
-            .reduce<NeighborParcel[]>((acc, item) => {
-              if (!acc.some((existing) => existing.kaek === item.kaek)) {
-                acc.push({ ...item, relation: "opposite" });
-              }
-              return acc;
-            }, []);
-
-          setOtParcels(adjacent);
-          setContextParcels(opposite);
-          setContextOts(surroundingOts);
-        } else {
-          setOtParcels([]);
-          setContextParcels([]);
-          setContextOts([]);
+        if (!tee?.rings?.length) {
+          if (!cancelled) {
+            setOtParcels([]);
+            setContextParcels([]);
+            setContextOts([]);
+          }
+          return;
         }
-      } else {
-        setBuildingTerms(null);
-        setOfficialRoadNames([]);
-        setContextOts([]);
-      }
 
-      setLoading(false);
-    })();
+        setContextLoading(true);
+
+        const [selectedOtParcels, surroundingOts] = await Promise.all([
+          fetchParcelsInOT(tee.rings, result.kaek).catch(() => []),
+          fetchContextOTs(tee.rings, tee.otNumber).catch(() => []),
+        ]);
+        if (cancelled) return;
+
+        const filteredCurrentOt = selectedOtParcels.filter(isDisplayableParcel);
+        const adjacent = filterAdjacentParcels(result.rings, filteredCurrentOt).map((item) => ({
+          ...item,
+          relation: "adjacent" as const,
+        }));
+        const adjacentKaeks = new Set(adjacent.map((item) => item.kaek));
+        const limitedSurroundingOts = surroundingOts.slice(0, 8);
+
+        const surroundingParcelGroups = await Promise.all(
+          limitedSurroundingOts.map((ot) => fetchParcelsInOT(ot.rings).catch(() => [])),
+        );
+        if (cancelled) return;
+
+        const opposite = surroundingParcelGroups
+          .flat()
+          .filter(isDisplayableParcel)
+          .filter((item) => item.kaek !== result.kaek && !adjacentKaeks.has(item.kaek))
+          .reduce<NeighborParcel[]>((acc, item) => {
+            if (!acc.some((existing) => existing.kaek === item.kaek)) {
+              acc.push({ ...item, relation: "opposite" });
+            }
+            return acc;
+          }, []);
+
+        setOtParcels(adjacent);
+        setContextParcels(opposite);
+        setContextOts(limitedSurroundingOts);
+      } catch (error) {
+        console.error("Failed to load export data", error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setContextLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [initialKaek]);
 
   const includeBlock = mode !== "parcel";
@@ -285,6 +332,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         </div>
 
         {loading ? <p className="text-sm text-muted-foreground">Loading export data…</p> : null}
+        {!loading && contextLoading ? <p className="text-sm text-muted-foreground">Loading surrounding O.T. context…</p> : null}
 
         {parcel ? (
           <section className="space-y-4">

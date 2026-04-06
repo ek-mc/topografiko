@@ -256,10 +256,10 @@ function distancePointToRings(point: Point, rings: Point[][]) {
 
 async function loadJsonpValue(url: string, callbackPath: string) {
   if (typeof document === "undefined" || typeof window === "undefined") {
-    throw new Error("JSONP is only available in browser context");
+    return "";
   }
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<string>((resolve) => {
     const root = window as Window & typeof globalThis & { __topografikoJsonp?: Record<string, (value: unknown) => void> };
     root.__topografikoJsonp = root.__topografikoJsonp || {};
     const callbackId = `cb_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -273,25 +273,30 @@ async function loadJsonpValue(url: string, callbackPath: string) {
       script.remove();
     };
 
-    root.__topografikoJsonp[callbackId] = (value: unknown) => {
+    const finish = (value = "") => {
+      if (settled) return;
       settled = true;
       cleanup();
-      resolve(String(value ?? ""));
+      resolve(value);
+    };
+
+    root.__topografikoJsonp[callbackId] = (value: unknown) => {
+      finish(String(value ?? ""));
     };
 
     script.async = true;
     script.src = `${url}${separator}callback=${encodeURIComponent(fullCallbackPath)}&scriptIndex=0`;
     script.onerror = () => {
-      cleanup();
-      reject(new Error("JSONP request failed"));
+      console.warn("Official JSONP request failed; continuing without remote labels.", { url });
+      finish("");
     };
 
     document.body.appendChild(script);
 
     window.setTimeout(() => {
       if (settled) return;
-      cleanup();
-      reject(new Error("JSONP request timed out"));
+      console.warn("Official JSONP request timed out; continuing without remote labels.", { url });
+      finish("");
     }, 12000);
   });
 }
