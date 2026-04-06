@@ -7,10 +7,12 @@ import { useTheme } from "@/contexts/ThemeContext";
 import mainUseMap from "@shared/main-use-map.json";
 import {
   boundsFromPoints,
+  centroidOfRing,
   downloadText,
   fetchParcelByKaek,
   fetchParcelsInOT,
   fetchTEECandidates,
+  filterAdjacentParcels,
   NeighborParcel,
   ParcelData,
   pathFromRingWithBounds,
@@ -69,6 +71,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
   const [paperSize] = useState<"A3" | "A4">("A3");
+  const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
 
   useEffect(() => {
     if (!initialKaek) return;
@@ -94,8 +97,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
             const isHuge = (item.area ?? 0) > 5000;
             return !isRoad && !isHuge;
           });
-          setOtParcels(filtered);
-          setContextParcels(filtered);
+          const adjacent = filterAdjacentParcels(result.rings, filtered);
+          setOtParcels(adjacent);
+          setContextParcels(adjacent);
         } else {
           setOtParcels([]);
           setContextParcels([]);
@@ -122,9 +126,13 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [parcel, otParcels, includeBlock]);
 
   const previewBounds = useMemo(() => {
-    const points = [...contextParcels, ...previewParcels].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
+    const points = [
+      ...contextParcels,
+      ...previewParcels,
+      ...teeCandidates.map((candidate) => ({ rings: candidate.rings } as { rings: Point[][] })),
+    ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, contextParcels]);
+  }, [previewParcels, contextParcels, teeCandidates]);
 
   const coords = useMemo(
     () =>
@@ -163,7 +171,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           includeTitleBlock: mode === "full",
           coords,
           paperSize,
-          scaleDenominator: 200,
+          scaleDenominator,
+          otRings: teeData?.rings,
         }),
         "application/dxf",
         false,
@@ -253,6 +262,23 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 ))}
               </div>
 
+              <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                {([1000, 500, 200, 100] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setScaleDenominator(value)}
+                    className={`rounded-xl px-4 py-2 transition-colors ${
+                      scaleDenominator === value
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                    }`}
+                  >
+                    1:{value}
+                  </button>
+                ))}
+              </div>
+
               <div className="ml-auto grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
@@ -285,64 +311,98 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     {previewBounds ? (
                       <svg viewBox="0 0 320 320" className="aspect-square w-full">
                         <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
+                        <rect x="24" y="18" width="214" height="278" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
+                        <line x1="238" y1="8" x2="238" y2="312" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
                         <NorthArrow isDark={isDark} />
                         {teeCandidates.flatMap((candidate) => candidate.rings).map((ring, index) => (
                           <path
                             key={index}
                             d={pathFromRingWithBounds(ring, previewBounds)}
-                            fill={isDark ? "rgba(96,165,250,0.08)" : "rgba(59,130,246,0.04)"}
-                            stroke={isDark ? "#64748b" : "#cbd5e1"}
-                            strokeWidth="1.2"
+                            fill="none"
+                            stroke="#22c55e"
+                            strokeWidth="1.6"
                           />
                         ))}
-                        {mode !== "parcel"
-                          ? null
-                          : contextParcels.map((item) => {
-                              const path = pathFromRingWithBounds(item.rings[0], previewBounds);
-                              return (
-                                <path
-                                  key={`ctx-${item.kaek}`}
-                                  d={path}
-                                  fill={isDark ? "rgba(148,163,184,0.12)" : "rgba(148,163,184,0.08)"}
-                                  stroke={isDark ? "#64748b" : "#cbd5e1"}
-                                  strokeWidth="1"
-                                />
-                              );
-                            })}
-                        {previewParcels.map((item) => {
+                        {previewParcels.filter((item) => !item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds);
-                          const pts = stripClosingPoint(item.rings[0]);
-                          const cx = pts.reduce((a, p) => a + p.x, 0) / Math.max(1, pts.length);
-                          const cy = pts.reduce((a, p) => a + p.y, 0) / Math.max(1, pts.length);
-                          const c = projectPoint({ x: cx, y: cy }, previewBounds);
+                          const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds);
                           return (
-                            <g key={item.kaek}>
+                            <g key={`adj-${item.kaek}`}>
                               <path
                                 d={path}
-                                fill={
-                                  item.current
-                                    ? isDark
-                                      ? "rgba(96,165,250,0.16)"
-                                      : "rgba(59,130,246,0.08)"
-                                    : isDark
-                                      ? "rgba(148,163,184,0.14)"
-                                      : "rgba(148,163,184,0.10)"
-                                }
-                                stroke={item.current ? (isDark ? "#93c5fd" : "#60a5fa") : isDark ? "#cbd5e1" : "#94a3b8"}
-                                strokeWidth={item.current ? "2.2" : "1.2"}
+                                fill="none"
+                                stroke={isDark ? "#cbd5e1" : "#64748b"}
+                                strokeWidth="1"
+                                strokeDasharray="5 3"
                               />
                               <text
-                                x={c.x}
-                                y={c.y + 4}
-                                fontSize="7.5"
+                                x={center.x}
+                                y={center.y + 3}
+                                fontSize="6"
                                 textAnchor="middle"
-                                fill={item.current ? (isDark ? "#dbeafe" : "#1e3a8a") : isDark ? "#e2e8f0" : "#475569"}
+                                fill={isDark ? "#e2e8f0" : "#475569"}
                               >
                                 {item.kaek}
                               </text>
                             </g>
                           );
                         })}
+                        {previewParcels.filter((item) => item.current).map((item) => {
+                          const path = pathFromRingWithBounds(item.rings[0], previewBounds);
+                          const c = projectPoint(centroidOfRing(item.rings[0]), previewBounds);
+                          return (
+                            <g key={item.kaek}>
+                              <path
+                                d={path}
+                                fill="none"
+                                stroke={isDark ? "#f8fafc" : "#111827"}
+                                strokeWidth="1.5"
+                              />
+                              <text
+                                x={c.x}
+                                y={c.y + 3}
+                                fontSize="6.5"
+                                textAnchor="middle"
+                                fill={isDark ? "#f8fafc" : "#111827"}
+                              >
+                                {item.kaek}
+                              </text>
+                            </g>
+                          );
+                        })}
+                        {(() => {
+                          const otRing = teeData?.rings?.[0];
+                          if (!otRing) return null;
+                          const c = projectPoint(centroidOfRing(otRing), previewBounds);
+                          return (
+                            <g>
+                              <circle cx={c.x} cy={c.y} r="10" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
+                              <text x={c.x} y={c.y - 1} fontSize="4.2" textAnchor="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
+                              <text x={c.x} y={c.y + 5} fontSize="4.2" textAnchor="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
+                            </g>
+                          );
+                        })()}
+                        {Array.from({ length: 4 }).map((_, ix) => {
+                          const x = 56 + ix * 50;
+                          return Array.from({ length: 4 }).map((__, iy) => {
+                            const y = 52 + iy * 56;
+                            return (
+                              <g key={`${ix}-${iy}`}>
+                                <line x1={x - 4} y1={y} x2={x + 4} y2={y} stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="0.8" />
+                                <line x1={x} y1={y - 4} x2={x} y2={y + 4} stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="0.8" />
+                              </g>
+                            );
+                          });
+                        })}
+                        <g>
+                          <line x1="250" y1="258" x2="270" y2="258" stroke="#22c55e" strokeWidth="1.6" />
+                          <text x="276" y="261" fontSize="5.5" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
+                          <line x1="250" y1="272" x2="270" y2="272" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.3" />
+                          <text x="276" y="275" fontSize="5.5" fill={isDark ? "#e2e8f0" : "#334155"}>οικοδομική γραμμή</text>
+                          <line x1="250" y1="286" x2="270" y2="286" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
+                          <text x="276" y="289" fontSize="5.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
+                        </g>
+                        <text x="250" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
                       </svg>
                     ) : null}
                   </div>
@@ -396,12 +456,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
                   {showLegend ? (
                     <Panel title="Υπόμνημα / Layers">
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <div>parcel-boundary</div>
-                        <div>ot-boundary</div>
-                        <div>adjacent-blocks</div>
-                        <div>north-arrow / scale</div>
-                        <div>parcel context</div>
+                      <div className="space-y-2 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-2"><span className="h-px w-10 bg-green-500" />ρυμοτομική γραμμή</div>
+                        <div className="flex items-center gap-2"><span className="h-px w-10 bg-red-500" />οικοδομική γραμμή</div>
+                        <div className="flex items-center gap-2"><span className="h-px w-10 border-t border-dashed border-muted-foreground" />όριο οικοπέδων</div>
+                        <div>Σταυροί καννάβου σε ξεχωριστό layer συντεταγμένων.</div>
+                        <div>Το οικόπεδο τοποθετείται στο κέντρο του πλαισίου για όλες τις κλίμακες.</div>
                       </div>
                     </Panel>
                   ) : null}
@@ -431,7 +491,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div className="text-muted-foreground">Δήμος</div>
                         <div>{teeData?.municipality || "—"}</div>
                         <div className="text-muted-foreground">Κλίμακα</div>
-                        <div>1:200</div>
+                        <div>1:{scaleDenominator}</div>
                         <div className="text-muted-foreground">Ημερομηνία</div>
                         <div>{new Date().toLocaleDateString("el-GR")}</div>
                         <div className="text-muted-foreground">Μελετητής</div>

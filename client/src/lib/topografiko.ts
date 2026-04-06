@@ -263,6 +263,90 @@ export async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string 
   })).filter((item: NeighborParcel) => !currentKaek || item.kaek !== currentKaek);
 }
 
+function distanceSquared(a: Point, b: Point) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function pointToSegmentDistance(point: Point, start: Point, end: Point) {
+  const lengthSquared = distanceSquared(start, end);
+  if (lengthSquared <= 1e-12) return Math.sqrt(distanceSquared(point, start));
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y)) / lengthSquared));
+  const projected = {
+    x: start.x + t * (end.x - start.x),
+    y: start.y + t * (end.y - start.y),
+  };
+  return Math.sqrt(distanceSquared(point, projected));
+}
+
+function orientation(a: Point, b: Point, c: Point) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function onSegment(a: Point, b: Point, c: Point, tolerance = 1e-6) {
+  return (
+    Math.min(a.x, c.x) - tolerance <= b.x &&
+    b.x <= Math.max(a.x, c.x) + tolerance &&
+    Math.min(a.y, c.y) - tolerance <= b.y &&
+    b.y <= Math.max(a.y, c.y) + tolerance
+  );
+}
+
+function segmentsIntersect(a1: Point, a2: Point, b1: Point, b2: Point, tolerance = 1e-6) {
+  const o1 = orientation(a1, a2, b1);
+  const o2 = orientation(a1, a2, b2);
+  const o3 = orientation(b1, b2, a1);
+  const o4 = orientation(b1, b2, a2);
+
+  if ((o1 > tolerance && o2 < -tolerance || o1 < -tolerance && o2 > tolerance) && (o3 > tolerance && o4 < -tolerance || o3 < -tolerance && o4 > tolerance)) {
+    return true;
+  }
+
+  if (Math.abs(o1) <= tolerance && onSegment(a1, b1, a2, tolerance)) return true;
+  if (Math.abs(o2) <= tolerance && onSegment(a1, b2, a2, tolerance)) return true;
+  if (Math.abs(o3) <= tolerance && onSegment(b1, a1, b2, tolerance)) return true;
+  if (Math.abs(o4) <= tolerance && onSegment(b1, a2, b2, tolerance)) return true;
+  return false;
+}
+
+function segmentDistance(a1: Point, a2: Point, b1: Point, b2: Point) {
+  if (segmentsIntersect(a1, a2, b1, b2)) return 0;
+  return Math.min(
+    pointToSegmentDistance(a1, b1, b2),
+    pointToSegmentDistance(a2, b1, b2),
+    pointToSegmentDistance(b1, a1, a2),
+    pointToSegmentDistance(b2, a1, a2),
+  );
+}
+
+function ringSegments(points: Point[]) {
+  const usable = stripClosingPoint(points);
+  return usable.map((point, index) => [point, usable[(index + 1) % usable.length]] as const);
+}
+
+function projectedRing(points: Point[]) {
+  return stripClosingPoint(points).map((point) => {
+    const [x, y] = transformToGGRS87(point.x, point.y);
+    return { x, y };
+  });
+}
+
+function ringsAreAdjacent(a: Point[], b: Point[], toleranceMeters = 0.35) {
+  const aProjected = projectedRing(a);
+  const bProjected = projectedRing(b);
+  if (aProjected.length < 2 || bProjected.length < 2) return false;
+  const aSegments = ringSegments(aProjected);
+  const bSegments = ringSegments(bProjected);
+  return aSegments.some(([a1, a2]) => bSegments.some(([b1, b2]) => segmentDistance(a1, a2, b1, b2) <= toleranceMeters));
+}
+
+export function filterAdjacentParcels(baseRings: Point[][], parcels: NeighborParcel[], toleranceMeters = 0.35) {
+  const baseRing = baseRings[0];
+  if (!baseRing?.length) return [] as NeighborParcel[];
+  return parcels.filter((parcel) => parcel.rings.some((ring) => ringsAreAdjacent(baseRing, ring, toleranceMeters)));
+}
+
 export function downloadText(filename: string, content: string, mime = "text/plain;charset=utf-8", addBom = false) {
   const payload = addBom ? `\ufeff${content}` : content;
   const blob = new Blob([payload], { type: mime });
@@ -284,9 +368,49 @@ function encodeDxfText(value: string) {
     .trim();
 }
 
-function addDxfText(writer: DxfWriter, x: number, y: number, height: number, value: string) {
-  const entity = writer.addText(point3d(x, y, 0), height, encodeDxfText(value));
+function addDxfText(
+  writer: DxfWriter,
+  x: number,
+  y: number,
+  height: number,
+  value: string,
+  options?: { rotation?: number; layerName?: string; colorNumber?: number },
+) {
+  const entity = writer.addText(point3d(x, y, 0), height, encodeDxfText(value), {
+    rotation: options?.rotation,
+    layerName: options?.layerName,
+  });
   entity.textStyle = DXF_TEXT_STYLE;
+  if (options?.colorNumber != null) entity.colorNumber = options.colorNumber;
+  return entity;
+}
+
+function addDxfLine(
+  writer: DxfWriter,
+  start: Point,
+  end: Point,
+  options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number },
+) {
+  const entity = writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0), {
+    layerName: options?.layerName,
+    lineType: options?.lineType,
+    lineTypeScale: options?.lineTypeScale,
+  });
+  if (options?.colorNumber != null) entity.colorNumber = options.colorNumber;
+  return entity;
+}
+
+function addDxfCircle(
+  writer: DxfWriter,
+  center: Point,
+  radius: number,
+  options?: { layerName?: string; lineType?: string; colorNumber?: number },
+) {
+  const entity = writer.addCircle(point3d(center.x, center.y, 0), radius, {
+    layerName: options?.layerName,
+    lineType: options?.lineType,
+  });
+  if (options?.colorNumber != null) entity.colorNumber = options.colorNumber;
   return entity;
 }
 
@@ -314,11 +438,27 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 
 export function toDXF(
   parcels: { kaek: string; rings: Point[][] }[],
-  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[]; paperSize?: "A4" | "A3" | "A1"; scaleDenominator?: number },
+  meta?: {
+    kaek?: string;
+    ot?: string;
+    municipality?: string;
+    region?: string;
+    includeTitleBlock?: boolean;
+    coords?: { i: number; x: string; y: string }[];
+    paperSize?: "A4" | "A3" | "A1";
+    scaleDenominator?: number;
+    otRings?: Point[][];
+  },
 ) {
   const writer = new DxfWriter();
   writer.setUnits(Units.Millimeters);
   writer.setVariable("$DWGCODEPAGE", { 3: "ANSI_1253" });
+  writer.addLType("PARCEL_DASH", "Parcel boundary dash", [8, -4]);
+  writer.addLayer("OT_BOUNDARY", 3, "CONTINUOUS");
+  writer.addLayer("PARCEL_MAIN", 1, "CONTINUOUS");
+  writer.addLayer("PARCEL_ADJ", 8, "PARCEL_DASH");
+  writer.addLayer("COORD_GRID", 8, "CONTINUOUS");
+  writer.addLayer("ANNOTATION", 7, "CONTINUOUS");
 
   const greekStyle = writer.tables.addStyle(DXF_TEXT_STYLE);
   greekStyle.fontFileName = "arial.ttf";
@@ -331,164 +471,185 @@ export function toDXF(
       return { x, y };
     })),
   }));
+  const projectedOtRings = (meta?.otRings || []).map((ring) => ring.map((p) => {
+    const [x, y] = transformToGGRS87(p.x, p.y);
+    return { x, y };
+  }));
 
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
   const paper = paperSize === "A3" ? { width: 420, height: 297 } : paperSize === "A1" ? { width: 841, height: 594 } : { width: 297, height: 210 };
-  const margin = 15;
-  const titleBlockWidth = 140;
-  const coordSpace = 35;
+  const margin = 10;
+  const titleBlockWidth = 112;
+  const coordOffsetX = 18;
+  const coordOffsetY = 18;
   const drawWin = {
-    x0: margin + coordSpace,
-    y0: margin + 10,
+    x0: margin + coordOffsetX,
+    y0: margin + coordOffsetY,
     x1: paper.width - titleBlockWidth - margin,
-    y1: paper.height - margin - coordSpace,
+    y1: paper.height - margin,
   };
 
   const mainParcel = projectedParcels[0];
-  const parcelPoints = stripClosingPoint(mainParcel.rings[0]);
+  const mainParcelPoints = stripClosingPoint(mainParcel.rings[0]);
+  if (!mainParcelPoints.length) return writer.stringify();
 
-  if (parcelPoints.length) {
-    const allProjectedPoints = projectedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
-    const bounds = boundsFromPoints(allProjectedPoints.length ? allProjectedPoints : parcelPoints);
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
+  const mainBounds = boundsFromPoints(mainParcelPoints);
+  const centerX = (mainBounds.minX + mainBounds.maxX) / 2;
+  const centerY = (mainBounds.minY + mainBounds.maxY) / 2;
+  const displayPoints = [
+    ...projectedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring))),
+    ...projectedOtRings.flatMap((ring) => stripClosingPoint(ring)),
+  ];
+  const displayBounds = boundsFromPoints(displayPoints.length ? displayPoints : mainParcelPoints);
+  const worldSpanX = Math.max(displayBounds.maxX - displayBounds.minX, mainBounds.maxX - mainBounds.minX, 1);
+  const worldSpanY = Math.max(displayBounds.maxY - displayBounds.minY, mainBounds.maxY - mainBounds.minY, 1);
+  const winWidth = drawWin.x1 - drawWin.x0;
+  const winHeight = drawWin.y1 - drawWin.y0;
+  const requestedScale = 1000 / scaleDenominator;
+  const fitScale = Math.min((winWidth * 0.9) / worldSpanX, (winHeight * 0.82) / worldSpanY);
+  const scale = Math.min(requestedScale, fitScale);
+  const windowCenterX = (drawWin.x0 + drawWin.x1) / 2;
+  const windowCenterY = (drawWin.y0 + drawWin.y1) / 2;
+  const toSheet = (p: Point) => ({
+    x: windowCenterX + (p.x - centerX) * scale,
+    y: windowCenterY + (p.y - centerY) * scale,
+  });
+  const visibleWorld = {
+    minX: centerX - (windowCenterX - drawWin.x0) / scale,
+    maxX: centerX + (drawWin.x1 - windowCenterX) / scale,
+    minY: centerY - (windowCenterY - drawWin.y0) / scale,
+    maxY: centerY + (drawWin.y1 - windowCenterY) / scale,
+  };
 
-    const parcelWidth = Math.max(bounds.maxX - bounds.minX, 1);
-    const parcelHeight = Math.max(bounds.maxY - bounds.minY, 1);
-    const winWidth = drawWin.x1 - drawWin.x0;
-    const winHeight = drawWin.y1 - drawWin.y0;
-    const fitScale = Math.min(winWidth / parcelWidth, winHeight / parcelHeight) * 0.85;
-    const requestedScale = 1000 / scaleDenominator;
-    const scale = Math.min(fitScale, requestedScale);
-    const windowCenterX = (drawWin.x0 + drawWin.x1) / 2;
-    const windowCenterY = (drawWin.y0 + drawWin.y1) / 2;
-    const toSheet = (p: Point) => ({
-      x: windowCenterX + (p.x - centerX) * scale,
-      y: windowCenterY + (p.y - centerY) * scale,
-    });
-    const toWorld = (sx: number, sy: number) => ({
-      x: centerX + (sx - windowCenterX) / scale,
-      y: centerY + (sy - windowCenterY) / scale,
-    });
+  addDxfLine(writer, { x: 0, y: 0 }, { x: paper.width, y: 0 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: paper.width, y: 0 }, { x: paper.width, y: paper.height }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: paper.width, y: paper.height }, { x: 0, y: paper.height }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: 0, y: paper.height }, { x: 0, y: 0 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: drawWin.x0, y: drawWin.y0 }, { x: drawWin.x1, y: drawWin.y0 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: drawWin.x1, y: drawWin.y0 }, { x: drawWin.x1, y: drawWin.y1 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: drawWin.x1, y: drawWin.y1 }, { x: drawWin.x0, y: drawWin.y1 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: drawWin.x0, y: drawWin.y1 }, { x: drawWin.x0, y: drawWin.y0 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: drawWin.x1, y: 0 }, { x: drawWin.x1, y: paper.height }, { layerName: "ANNOTATION" });
 
-    writer.addLine(point3d(0, 0, 0), point3d(paper.width, 0, 0));
-    writer.addLine(point3d(paper.width, 0, 0), point3d(paper.width, paper.height, 0));
-    writer.addLine(point3d(paper.width, paper.height, 0), point3d(0, paper.height, 0));
-    writer.addLine(point3d(0, paper.height, 0), point3d(0, 0, 0));
-    writer.addLine(point3d(drawWin.x0, drawWin.y0, 0), point3d(drawWin.x1, drawWin.y0, 0));
-    writer.addLine(point3d(drawWin.x1, drawWin.y0, 0), point3d(drawWin.x1, drawWin.y1, 0));
-    writer.addLine(point3d(drawWin.x1, drawWin.y1, 0), point3d(drawWin.x0, drawWin.y1, 0));
-    writer.addLine(point3d(drawWin.x0, drawWin.y1, 0), point3d(drawWin.x0, drawWin.y0, 0));
-    writer.addLine(point3d(drawWin.x1, 0, 0), point3d(drawWin.x1, paper.height, 0));
-
-    projectedParcels.forEach((parcel, parcelIndex) => {
-      const pts = stripClosingPoint(parcel.rings[0]).map(toSheet);
-      if (pts.length < 2) return;
-      pts.forEach((start, index) => {
-        const end = pts[(index + 1) % pts.length];
-        writer.addLine(point3d(start.x, start.y, 0), point3d(end.x, end.y, 0));
-      });
-
-      const sourcePoints = stripClosingPoint(parcel.rings[0]);
-      if (sourcePoints.length && parcelIndex < 12) {
-        const centroidX = sourcePoints.reduce((sum, point) => sum + point.x, 0) / sourcePoints.length;
-        const centroidY = sourcePoints.reduce((sum, point) => sum + point.y, 0) / sourcePoints.length;
-        const labelPoint = toSheet({ x: centroidX, y: centroidY });
-        addDxfText(writer, labelPoint.x - 8, labelPoint.y, parcelIndex === 0 ? 2.2 : 1.8, parcel.kaek);
-      }
-    });
-
-    const nx = drawWin.x0 + 12;
-    const ny = drawWin.y1 - 15;
-    writer.addLine(point3d(nx, ny - 12, 0), point3d(nx, ny + 2, 0));
-    writer.addLine(point3d(nx, ny + 2, 0), point3d(nx - 4, ny - 6, 0));
-    writer.addLine(point3d(nx, ny + 2, 0), point3d(nx + 4, ny - 6, 0));
-    writer.addLine(point3d(nx - 4, ny - 6, 0), point3d(nx + 4, ny - 6, 0));
-    addDxfText(writer, nx - 2.2, ny + 6, 3, "Β");
-
-    const tickStep = 50;
-    const roundTo = 50;
-    const seenX = new Set<number>();
-    const seenY = new Set<number>();
-
-    for (let sx = drawWin.x0; sx <= drawWin.x1 + 0.1; sx += tickStep) {
-      const world = toWorld(sx, drawWin.y0);
-      const roundedX = Math.round(world.x / roundTo) * roundTo;
-      if (seenX.has(roundedX)) continue;
-      seenX.add(roundedX);
-
-      writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 4, 0));
-      writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 4, 0));
-      writer.addLine(point3d(sx - 3, drawWin.y0, 0), point3d(sx + 3, drawWin.y0, 0));
-      writer.addLine(point3d(sx, drawWin.y0 - 3, 0), point3d(sx, drawWin.y0 + 3, 0));
-      writer.addLine(point3d(sx - 3, drawWin.y1, 0), point3d(sx + 3, drawWin.y1, 0));
-      writer.addLine(point3d(sx, drawWin.y1 - 3, 0), point3d(sx, drawWin.y1 + 3, 0));
-      addDxfText(writer, sx - 12, drawWin.y0 + 8, 2.2, String(Math.round(roundedX)));
+  const worldGridStep = scaleDenominator <= 100 ? 10 : scaleDenominator <= 200 ? 20 : scaleDenominator <= 500 ? 50 : 100;
+  const crossHalf = 2.4;
+  for (let worldX = Math.ceil(visibleWorld.minX / worldGridStep) * worldGridStep; worldX <= visibleWorld.maxX + 0.001; worldX += worldGridStep) {
+    const sx = windowCenterX + (worldX - centerX) * scale;
+    addDxfLine(writer, { x: sx, y: drawWin.y0 }, { x: sx, y: drawWin.y0 - 3 }, { layerName: "COORD_GRID" });
+    addDxfLine(writer, { x: sx, y: drawWin.y1 }, { x: sx, y: drawWin.y1 + 3 }, { layerName: "COORD_GRID" });
+    addDxfText(writer, sx - 1.5, drawWin.y0 - 6.5, 1.5, String(Math.round(worldX)), { rotation: 90, layerName: "ANNOTATION" });
+    for (let worldY = Math.ceil(visibleWorld.minY / worldGridStep) * worldGridStep; worldY <= visibleWorld.maxY + 0.001; worldY += worldGridStep) {
+      const sy = windowCenterY + (worldY - centerY) * scale;
+      addDxfLine(writer, { x: sx - crossHalf, y: sy }, { x: sx + crossHalf, y: sy }, { layerName: "COORD_GRID" });
+      addDxfLine(writer, { x: sx, y: sy - crossHalf }, { x: sx, y: sy + crossHalf }, { layerName: "COORD_GRID" });
     }
+  }
 
-    for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
-      const world = toWorld(drawWin.x0, sy);
-      const roundedY = Math.round(world.y / roundTo) * roundTo;
-      if (seenY.has(roundedY)) continue;
-      seenY.add(roundedY);
+  for (let worldY = Math.ceil(visibleWorld.minY / worldGridStep) * worldGridStep; worldY <= visibleWorld.maxY + 0.001; worldY += worldGridStep) {
+    const sy = windowCenterY + (worldY - centerY) * scale;
+    addDxfLine(writer, { x: drawWin.x0, y: sy }, { x: drawWin.x0 - 3, y: sy }, { layerName: "COORD_GRID" });
+    addDxfLine(writer, { x: drawWin.x1, y: sy }, { x: drawWin.x1 + 3, y: sy }, { layerName: "COORD_GRID" });
+    addDxfText(writer, drawWin.x0 - 13, sy - 0.8, 1.5, String(Math.round(worldY)), { layerName: "ANNOTATION" });
+  }
 
-      writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 4, sy, 0));
-      writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 4, sy, 0));
-      writer.addLine(point3d(drawWin.x0 - 3, sy, 0), point3d(drawWin.x0 + 3, sy, 0));
-      writer.addLine(point3d(drawWin.x0, sy - 3, 0), point3d(drawWin.x0, sy + 3, 0));
-      writer.addLine(point3d(drawWin.x1 - 3, sy, 0), point3d(drawWin.x1 + 3, sy, 0));
-      writer.addLine(point3d(drawWin.x1, sy - 3, 0), point3d(drawWin.x1, sy + 3, 0));
-      addDxfText(writer, drawWin.x0 + 4, sy + 2, 2.2, String(Math.round(roundedY)));
-    }
+  projectedOtRings.forEach((ring) => {
+    const pts = stripClosingPoint(ring).map(toSheet);
+    pts.forEach((start, index) => {
+      const end = pts[(index + 1) % pts.length];
+      addDxfLine(writer, start, end, { layerName: "OT_BOUNDARY", colorNumber: 3 });
+    });
+  });
 
-    if (meta?.includeTitleBlock) {
-      const x0 = drawWin.x1 + 6;
-      const x1 = paper.width - 6;
-      const y0 = 6;
-      const y1 = paper.height - 6;
-      const dateText = new Intl.DateTimeFormat("el-GR").format(new Date());
+  projectedParcels.slice(1).forEach((parcel) => {
+    const pts = stripClosingPoint(parcel.rings[0]);
+    if (pts.length < 2) return;
+    const sheetPoints = pts.map(toSheet);
+    sheetPoints.forEach((start, index) => {
+      const end = sheetPoints[(index + 1) % sheetPoints.length];
+      addDxfLine(writer, start, end, { layerName: "PARCEL_ADJ", lineType: "PARCEL_DASH", lineTypeScale: 0.6, colorNumber: 8 });
+    });
+    const labelPoint = toSheet(centroidOfRing(parcel.rings[0]));
+    addDxfText(writer, labelPoint.x - 8, labelPoint.y, 1.6, parcel.kaek, { layerName: "ANNOTATION" });
+  });
 
-      writer.addLine(point3d(x0, y0, 0), point3d(x1, y0, 0));
-      writer.addLine(point3d(x1, y0, 0), point3d(x1, y1, 0));
-      writer.addLine(point3d(x1, y1, 0), point3d(x0, y1, 0));
-      writer.addLine(point3d(x0, y1, 0), point3d(x0, y0, 0));
+  const mainSheetPoints = mainParcelPoints.map(toSheet);
+  mainSheetPoints.forEach((start, index) => {
+    const end = mainSheetPoints[(index + 1) % mainSheetPoints.length];
+    addDxfLine(writer, start, end, { layerName: "PARCEL_MAIN", colorNumber: 1 });
+  });
+  const mainLabelPoint = toSheet(centroidOfRing(mainParcel.rings[0]));
+  addDxfText(writer, mainLabelPoint.x - 8, mainLabelPoint.y, 1.8, mainParcel.kaek, { layerName: "ANNOTATION" });
 
-      addDxfText(writer, x0 + 4, y1 - 8, 3, "ΤΟΠΟΓΡΑΦΙΚΟ ΔΙΑΓΡΑΜΜΑ");
-      writer.addLine(point3d(x0, y1 - 12, 0), point3d(x1, y1 - 12, 0));
+  if (projectedOtRings[0]?.length) {
+    const otCircleCenter = toSheet(centroidOfRing(projectedOtRings[0]));
+    addDxfCircle(writer, otCircleCenter, 6, { layerName: "ANNOTATION" });
+    addDxfText(writer, otCircleCenter.x - 3.2, otCircleCenter.y + 1.2, 1.5, "Ο.Τ.", { layerName: "ANNOTATION" });
+    addDxfText(writer, otCircleCenter.x - 4.2, otCircleCenter.y - 2.8, 1.5, meta?.ot || "-", { layerName: "ANNOTATION" });
+  }
 
-      const lines = [
-        ["Μελετητής", "-"],
-        ["Έργο", "Τοπογραφικό Διάγραμμα"],
-        ["Θέση", `Ο.Τ. ${meta.ot || "-"}, Δήμος ${meta.municipality || "-"}`],
-        ["KAEK", meta.kaek || "-"],
-        ["Κλίμακα", `1:${scaleDenominator}`],
-        ["Ημερομηνία", dateText],
-        ["Σύστημα αναφοράς", "ΕΓΣΑ '87"],
-      ] as const;
+  const northX = drawWin.x0 + 16;
+  const northY = drawWin.y1 - 20;
+  addDxfLine(writer, { x: northX, y: northY - 10 }, { x: northX, y: northY + 2 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: northX, y: northY + 2 }, { x: northX - 4, y: northY - 6 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: northX, y: northY + 2 }, { x: northX + 4, y: northY - 6 }, { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: northX - 4, y: northY - 6 }, { x: northX + 4, y: northY - 6 }, { layerName: "ANNOTATION" });
+  addDxfText(writer, northX - 2.2, northY + 6, 3, "Β", { layerName: "ANNOTATION" });
 
-      let y = y1 - 20;
-      lines.forEach(([label, value]) => {
-        addDxfText(writer, x0 + 4, y, 2.2, label);
-        addDxfText(writer, x0 + 40, y, 2.2, value);
-        y -= 8;
-      });
+  const legendX = drawWin.x1 - 72;
+  const legendY = drawWin.y0 + 14;
+  addDxfText(writer, legendX, legendY + 14, 2, "ΥΠΟΜΝΗΜΑ", { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: legendX, y: legendY + 8 }, { x: legendX + 22, y: legendY + 8 }, { layerName: "OT_BOUNDARY", colorNumber: 3 });
+  addDxfText(writer, legendX + 28, legendY + 7, 1.8, "ρυμοτομική γραμμή", { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: legendX, y: legendY + 2 }, { x: legendX + 22, y: legendY + 2 }, { layerName: "PARCEL_MAIN", colorNumber: 1 });
+  addDxfText(writer, legendX + 28, legendY + 1, 1.8, "οικοδομική γραμμή", { layerName: "ANNOTATION" });
+  addDxfLine(writer, { x: legendX, y: legendY - 4 }, { x: legendX + 22, y: legendY - 4 }, { layerName: "PARCEL_ADJ", lineType: "PARCEL_DASH", lineTypeScale: 0.6, colorNumber: 8 });
+  addDxfText(writer, legendX + 28, legendY - 5, 1.8, "όριο οικοπέδων", { layerName: "ANNOTATION" });
 
-      writer.addLine(point3d(x0, y + 3, 0), point3d(x1, y + 3, 0));
-      addDxfText(writer, x0 + 4, y - 2, 2.2, "Συντεταγμένες κορυφών ΕΓΣΑ '87");
-      y -= 8;
-      addDxfText(writer, x0 + 4, y, 1.8, "#");
-      addDxfText(writer, x0 + 12, y, 1.8, "X");
-      addDxfText(writer, x0 + 62, y, 1.8, "Y");
-      y -= 5;
+  if (meta?.includeTitleBlock) {
+    const x0 = drawWin.x1 + 6;
+    const x1 = paper.width - 6;
+    const y0 = 6;
+    const y1 = paper.height - 6;
+    const dateText = new Intl.DateTimeFormat("el-GR").format(new Date());
+    addDxfLine(writer, { x: x0, y: y0 }, { x: x1, y: y0 }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: x1, y: y0 }, { x: x1, y: y1 }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: x1, y: y1 }, { x: x0, y: y1 }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: x0, y: y1 }, { x: x0, y: y0 }, { layerName: "ANNOTATION" });
+    addDxfText(writer, x0 + 4, y1 - 8, 3, "ΤΟΠΟΓΡΑΦΙΚΟ ΔΙΑΓΡΑΜΜΑ", { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: x0, y: y1 - 12 }, { x: x1, y: y1 - 12 }, { layerName: "ANNOTATION" });
 
-      (meta.coords || []).slice(0, 20).forEach((row) => {
-        addDxfText(writer, x0 + 4, y, 1.8, `${row.i}`);
-        addDxfText(writer, x0 + 12, y, 1.8, row.x);
-        addDxfText(writer, x0 + 62, y, 1.8, row.y);
-        y -= 5;
-      });
-    }
+    const lines = [
+      ["Μελετητής", "-"],
+      ["Έργο", "Τοπογραφικό Διάγραμμα"],
+      ["Θέση", `Ο.Τ. ${meta.ot || "-"}, Δήμος ${meta.municipality || "-"}`],
+      ["KAEK", meta.kaek || "-"],
+      ["Κλίμακα", `1:${scaleDenominator}`],
+      ["Ημερομηνία", dateText],
+      ["Σύστημα αναφοράς", "ΕΓΣΑ '87"],
+    ] as const;
+
+    let y = y1 - 20;
+    lines.forEach(([label, value]) => {
+      addDxfText(writer, x0 + 4, y, 2, label, { layerName: "ANNOTATION" });
+      addDxfText(writer, x0 + 37, y, 2, value, { layerName: "ANNOTATION" });
+      y -= 7;
+    });
+
+    addDxfLine(writer, { x: x0, y: y + 2 }, { x: x1, y: y + 2 }, { layerName: "ANNOTATION" });
+    addDxfText(writer, x0 + 4, y - 2, 2, "Συντεταγμένες κορυφών ΕΓΣΑ '87", { layerName: "ANNOTATION" });
+    y -= 8;
+    addDxfText(writer, x0 + 4, y, 1.6, "#", { layerName: "ANNOTATION" });
+    addDxfText(writer, x0 + 12, y, 1.6, "X", { layerName: "ANNOTATION" });
+    addDxfText(writer, x0 + 56, y, 1.6, "Y", { layerName: "ANNOTATION" });
+    y -= 4.5;
+
+    (meta.coords || []).slice(0, 20).forEach((row) => {
+      addDxfText(writer, x0 + 4, y, 1.45, `${row.i}`, { layerName: "ANNOTATION" });
+      addDxfText(writer, x0 + 12, y, 1.45, row.x, { layerName: "ANNOTATION" });
+      addDxfText(writer, x0 + 56, y, 1.45, row.y, { layerName: "ANNOTATION" });
+      y -= 4.3;
+    });
   }
 
   return writer.stringify();
