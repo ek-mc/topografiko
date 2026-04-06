@@ -70,7 +70,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
-  const [paperSize] = useState<"A3" | "A4">("A3");
+  const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A3");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
 
   useEffect(() => {
@@ -250,16 +250,26 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               </div>
 
               <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                {(["A4", "A3", "A1"] as const).map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    disabled={size !== "A3"}
-                    className={`rounded-xl px-4 py-2 ${size === "A3" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground/60"}`}
-                  >
-                    {size}
-                  </button>
-                ))}
+                {(["A4", "A3", "A1"] as const).map((size) => {
+                  const enabled = size === "A3" || size === "A1";
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      disabled={!enabled}
+                      onClick={() => enabled && setPaperSize(size)}
+                      className={`rounded-xl px-4 py-2 transition-colors ${
+                        paperSize === size
+                          ? "bg-card text-foreground shadow-sm"
+                          : enabled
+                            ? "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                            : "text-muted-foreground/60"
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
@@ -377,8 +387,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           return (
                             <g>
                               <circle cx={c.x} cy={c.y} r="10" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
-                              <text x={c.x} y={c.y - 1} fontSize="4.2" textAnchor="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
-                              <text x={c.x} y={c.y + 5} fontSize="4.2" textAnchor="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
+                              <text x={c.x} y={c.y - 0.5} fontSize="4.2" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
+                              <text x={c.x} y={c.y + 5} fontSize="4.2" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
                             </g>
                           );
                         })()}
@@ -395,12 +405,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           });
                         })}
                         <g>
-                          <line x1="250" y1="258" x2="270" y2="258" stroke="#22c55e" strokeWidth="1.6" />
-                          <text x="276" y="261" fontSize="5.5" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
-                          <line x1="250" y1="272" x2="270" y2="272" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.3" />
-                          <text x="276" y="275" fontSize="5.5" fill={isDark ? "#e2e8f0" : "#334155"}>οικοδομική γραμμή</text>
-                          <line x1="250" y1="286" x2="270" y2="286" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
-                          <text x="276" y="289" fontSize="5.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
+                          <rect x="246" y="246" width="68" height="52" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
+                          <text x="250" y="254" fontSize="5.3" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
+                          <line x1="250" y1="262" x2="270" y2="262" stroke="#22c55e" strokeWidth="1.6" />
+                          <text x="276" y="265" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
+                          <line x1="250" y1="276" x2="270" y2="276" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.3" />
+                          <text x="276" y="279" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
+                          <line x1="250" y1="290" x2="270" y2="290" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
+                          <text x="276" y="293" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
                         </g>
                         <text x="250" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
                       </svg>
@@ -492,6 +504,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div>{teeData?.municipality || "—"}</div>
                         <div className="text-muted-foreground">Κλίμακα</div>
                         <div>1:{scaleDenominator}</div>
+                        <div className="text-muted-foreground">Χαρτί</div>
+                        <div>{paperSize}</div>
                         <div className="text-muted-foreground">Ημερομηνία</div>
                         <div>{new Date().toLocaleDateString("el-GR")}</div>
                         <div className="text-muted-foreground">Μελετητής</div>
