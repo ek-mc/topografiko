@@ -12,6 +12,7 @@ import {
   CoordinateRow,
   downloadText,
   fetchBuildingTerms,
+  fetchContextOTs,
   fetchParcelByKaek,
   fetchParcelsInOT,
   fetchTEECandidates,
@@ -68,6 +69,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [buildingTerms, setBuildingTerms] = useState<BuildingTermsData | null>(null);
   const [otParcels, setOtParcels] = useState<NeighborParcel[]>([]);
   const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
+  const [contextOts, setContextOts] = useState<TEEData[]>([]);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<ExportMode>("parcel");
   const [showCoords, setShowCoords] = useState(true);
@@ -97,7 +99,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         setTeeData(tee);
 
         if (tee?.rings?.length) {
-          const selectedOtParcels = await fetchParcelsInOT(tee.rings, result.kaek);
+          const [selectedOtParcels, surroundingOts] = await Promise.all([
+            fetchParcelsInOT(tee.rings, result.kaek),
+            fetchContextOTs(tee.rings, tee.otNumber),
+          ]);
           const filtered = selectedOtParcels.filter((item) => {
             const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[item.mainUse];
             const category = info?.category || "";
@@ -109,12 +114,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           const adjacent = filterAdjacentParcels(result.rings, filtered);
           setOtParcels(adjacent);
           setContextParcels(adjacent);
+          setContextOts(surroundingOts);
         } else {
           setOtParcels([]);
           setContextParcels([]);
+          setContextOts([]);
         }
       } else {
         setBuildingTerms(null);
+        setContextOts([]);
       }
 
       setLoading(false);
@@ -140,9 +148,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     const points = [
       ...previewParcels,
       ...(teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
+      ...contextOts.map((item) => ({ rings: item.rings })),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, teeData]);
+  }, [previewParcels, teeData, contextOts]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
     if (parcel?.officialRingsGgrs87?.[0]?.length) {
@@ -165,9 +174,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       ["Όροφοι", buildingTerms.floors || ""],
       ["Ελάχ. εμβαδό", buildingTerms.minArea || ""],
       ["Ελάχ. πρόσωπο", buildingTerms.minFrontage || ""],
+      ["Αρτιότητα", buildingTerms.lotRuleType || ""],
       ["Οικ. σύστημα", buildingTerms.buildingSystem || ""],
     ].filter(([, value]) => Boolean(value));
   }, [buildingTerms]);
+
+  const coordinateLoopLabel = useMemo(() => {
+    if (!coords.length) return "";
+    return `${coords.map((row) => row.label).join("")}${coords[0].label}`;
+  }, [coords]);
 
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
@@ -191,11 +206,13 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           ot: teeData?.otNumber,
           municipality: teeData?.municipality,
           region: "(#Perifereia)",
+          area: parcel.area,
           includeTitleBlock: showTitleBlock && mode === "full",
           coords,
           paperSize,
           scaleDenominator,
           otRings: teeData?.rings,
+          contextOts,
           buildingTerms,
         }),
         "application/dxf",
@@ -348,15 +365,30 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <rect x="18" y="18" width="220" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
                         <line x1="238" y1="8" x2="238" y2="312" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
                         <NorthArrow isDark={isDark} />
-                        {teeCandidates.flatMap((candidate) => candidate.rings).map((ring, index) => (
-                          <path
-                            key={index}
-                            d={pathFromRingWithBounds(ring, previewBounds)}
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="1.6"
-                          />
-                        ))}
+                        {contextOts.map((item, index) => {
+                          const ring = item.rings[0];
+                          if (!ring?.length) return null;
+                          const center = projectPoint(centroidOfRing(ring), previewBounds);
+                          return (
+                            <g key={`context-ot-${item.otNumber}-${index}`}>
+                              <path
+                                d={pathFromRingWithBounds(ring, previewBounds)}
+                                fill="none"
+                                stroke="#22c55e"
+                                strokeWidth="1.2"
+                              />
+                              <text
+                                x={center.x}
+                                y={center.y + 2}
+                                fontSize="4.4"
+                                textAnchor="middle"
+                                fill="#22c55e"
+                              >
+                                {`Ο.Τ. ${item.otNumber}`}
+                              </text>
+                            </g>
+                          );
+                        })}
                         {previewParcels.filter((item) => !item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds);
                           const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds);
@@ -410,9 +442,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           const c = projectPoint(centroidOfRing(otRing), previewBounds);
                           return (
                             <g>
-                              <rect x={c.x - 12} y={c.y - 7} width="24" height="14" rx="1.5" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
-                              <text x={c.x} y={c.y - 1.8} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
-                              <text x={c.x} y={c.y + 4.2} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
+                              <rect x={c.x - 17} y={c.y - 6.5} width="34" height="13" rx="1.5" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
+                              <text x={c.x} y={c.y + 0.5} fontSize="4.8" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{`Ο.Τ. ${teeData?.otNumber || "-"}`}</text>
                             </g>
                           );
                         })()}
@@ -438,7 +469,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           <line x1="162" y1="285" x2="182" y2="285" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.2" />
                           <text x="187" y="288" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
                           <line x1="162" y1="297" x2="182" y2="297" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
-                          <text x="187" y="300" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
+                          <text x="187" y="300" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όρια όμορων οικοπέδων</text>
                         </g>
                         <text x="250" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
                       </svg>
@@ -476,18 +507,28 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   ) : null}
 
                         {showCoords ? (
-                    <Panel title="Συντεταγμένες Κορυφών">
-                      <div className="grid grid-cols-[48px_1fr_1fr] gap-x-2 gap-y-1 text-xs">
-                        <div className="font-medium text-muted-foreground">Σημείο</div>
-                        <div className="font-medium text-muted-foreground">X</div>
-                        <div className="font-medium text-muted-foreground">Y</div>
-                        {coords.slice(0, 8).map((row) => (
-                          <Fragment key={row.label}>
-                            <div>{row.label}</div>
-                            <div>{row.x}</div>
-                            <div>{row.y}</div>
-                          </Fragment>
-                        ))}
+                    <Panel title="Συντεταγμένες Κορυφών Οικοπέδου">
+                      <div className="overflow-hidden rounded-lg border border-border">
+                        <div className="border-b border-border px-3 py-2 text-center text-[11px] font-semibold tracking-wide text-foreground">
+                          ΣΥΝΤ/ΜΕΝΕΣ ΚΟΡΥΦΩΝ ΟΙΚΟΠΕΔΟΥ ΕΓΣΑ&apos;87
+                        </div>
+                        <div className="grid grid-cols-[56px_1fr_1fr] border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                          <div>Α/Α</div>
+                          <div>X</div>
+                          <div>Y</div>
+                        </div>
+                        <div className="divide-y divide-border text-xs">
+                          {coords.map((row) => (
+                            <div key={row.label} className="grid grid-cols-[56px_1fr_1fr] px-3 py-1.5">
+                              <div>{row.label}</div>
+                              <div>{row.x}</div>
+                              <div>{row.y}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-border px-3 py-2 text-center text-sm font-medium">
+                        {`ΕΜΒΑΔΟΝ ΟΙΚΟΠΕΔΟΥ (${coordinateLoopLabel || "-"}): Ε=${parcel.area?.toFixed(2) || "-"} Τ.Μ.`}
                       </div>
                     </Panel>
                   ) : null}
@@ -500,7 +541,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           <div className="flex items-center gap-2"><span className="h-px w-10 bg-green-500" />ρυμοτομική γραμμή</div>
                           <div className="flex items-center gap-2"><span className="h-px w-10 bg-red-500" />οικοδομική γραμμή</div>
                           <div className="flex items-center gap-2"><span className="h-px w-10 bg-foreground" />όριο οικοπέδου</div>
-                          <div className="flex items-center gap-2"><span className="h-px w-10 border-t border-dashed border-muted-foreground" />όριο οικοπέδων</div>
+                          <div className="flex items-center gap-2"><span className="h-px w-10 border-t border-dashed border-muted-foreground" />όρια όμορων οικοπέδων</div>
                           <div>Οι επιγραφές κορυφών του οικοπέδου σημειώνονται ως Α, Β, Γ, … και τοποθετούνται εξωτερικά του περιγράμματος.</div>
                           <div>Οι ενδείξεις μηκών πλευρών τοποθετούνται εσωτερικά για καθαρότερη ανάγνωση του σχεδίου.</div>
                         </div>
@@ -522,7 +563,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           </div>
                           {buildingTerms.notes.length ? (
                             <div className="space-y-1.5 border-t border-border pt-2 text-muted-foreground">
-                              {buildingTerms.notes.slice(0, 4).map((note, index) => (
+                              {buildingTerms.notes.map((note, index) => (
                                 <div key={`${index}-${note}`}>{note}</div>
                               ))}
                             </div>
