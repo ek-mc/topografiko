@@ -322,28 +322,33 @@ export async function fetchOfficialRoadLabels(ringsGgrs87: Point[][]): Promise<O
   const usableRings = ringsGgrs87.map((ring) => stripClosingPoint(ring)).filter((ring) => ring.length >= 3);
   if (!usableRings.length) return [];
 
-  const allPoints = usableRings.flat();
-  const bounds = boundsFromPoints(allPoints);
-  const pad = 180;
-  const data = `Info:::${bounds.minX - pad}:${bounds.minY - pad}:${bounds.maxX + pad}:${bounds.maxY + pad}:10:1`;
-  const url = `https://gis.ktimanet.gr/gis/WebAPIWebServicev1.3/ImageService.aspx?Data=${encodeURIComponent(data)}&KEY=maps.gov.gr`;
-  const raw = await loadJsonpValue(url, "__topografikoJsonp");
-  const seen = new Set<string>();
+  try {
+    const allPoints = usableRings.flat();
+    const bounds = boundsFromPoints(allPoints);
+    const pad = 180;
+    const data = `Info:::${bounds.minX - pad}:${bounds.minY - pad}:${bounds.maxX + pad}:${bounds.maxY + pad}:10:1`;
+    const url = `https://gis.ktimanet.gr/gis/WebAPIWebServicev1.3/ImageService.aspx?Data=${encodeURIComponent(data)}&KEY=maps.gov.gr`;
+    const raw = await loadJsonpValue(url, "__topografikoJsonp");
+    const seen = new Set<string>();
 
-  return parseOfficialInfoResponse(raw)
-    .filter((item) => item.kind === 3)
-    .map((item) => ({
-      ...item,
-      distanceToParcel: distancePointToRings(item.point, usableRings),
-    }))
-    .filter((item) => item.distanceToParcel <= 220)
-    .sort((a, b) => a.distanceToParcel - b.distanceToParcel || a.name.localeCompare(b.name, "el"))
-    .filter((item) => {
-      const key = `${item.name}::${item.municipality}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    return parseOfficialInfoResponse(raw)
+      .filter((item) => item.kind === 3)
+      .map((item) => ({
+        ...item,
+        distanceToParcel: distancePointToRings(item.point, usableRings),
+      }))
+      .filter((item) => item.distanceToParcel <= 220)
+      .sort((a, b) => a.distanceToParcel - b.distanceToParcel || a.name.localeCompare(b.name, "el"))
+      .filter((item) => {
+        const key = `${item.name}::${item.municipality}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  } catch (error) {
+    console.warn("Official road label lookup failed; continuing without road labels.", error);
+    return [];
+  }
 }
 
 function formatValue(value: unknown, suffix = "", digits = 2) {
