@@ -293,24 +293,44 @@ export function toDXF(
       });
     });
 
-    // north + scale
-    writer.addText(point3d(drawWin.x0 + 8, drawWin.y1 - 8, 0), 3, 'N');
-    writer.addLine(point3d(drawWin.x0 + 8, drawWin.y1 - 20, 0), point3d(drawWin.x0 + 8, drawWin.y1 - 10, 0));
-    writer.addText(point3d(drawWin.x0 + 18, drawWin.y1 - 8, 0), 2.5, `1:${scaleDenominator}`);
+    // north arrow symbol (triangle with line)
+    const nx = drawWin.x0 + 12;
+    const ny = drawWin.y1 - 15;
+    writer.addLine(point3d(nx, ny - 12, 0), point3d(nx, ny + 3, 0)); // vertical line
+    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx - 4, ny - 5, 0)); // left side
+    writer.addLine(point3d(nx, ny + 3, 0), point3d(nx + 4, ny - 5, 0)); // right side
+    writer.addLine(point3d(nx - 4, ny - 5, 0), point3d(nx + 4, ny - 5, 0)); // base
+    writer.addText(point3d(nx - 2, ny + 6, 0), 3, 'N');
+    writer.addText(point3d(nx + 10, ny, 0), 2.5, `1:${scaleDenominator}`);
 
-    // coordinate frame ticks
-    const tickStep = 40;
+    // coordinate frame ticks with crosshairs and rounded coords
+    const tickStep = 50; // mm on paper
+    const roundTo = 50; // round world coords to nearest 50
+    
     for (let sx = drawWin.x0; sx <= drawWin.x1 + 0.1; sx += tickStep) {
-      writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 2.5, 0));
-      writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 2.5, 0));
+      // Ticks
+      writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 3, 0));
+      writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 3, 0));
+      // Crosshairs at intersections
+      writer.addLine(point3d(sx - 2, drawWin.y0, 0), point3d(sx + 2, drawWin.y0, 0));
+      writer.addLine(point3d(sx - 2, drawWin.y1, 0), point3d(sx + 2, drawWin.y1, 0));
+      // Coordinates (rounded)
       const world = toWorld(sx, drawWin.y0);
-      writer.addText(point3d(sx - 5, drawWin.y0 - 6, 0), 1.8, world.x.toFixed(2));
+      const roundedX = Math.round(world.x / roundTo) * roundTo;
+      writer.addText(point3d(sx - 8, drawWin.y0 - 7, 0), 2, String(roundedX));
     }
+    
     for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
-      writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 2.5, sy, 0));
-      writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 2.5, sy, 0));
+      // Ticks
+      writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 3, sy, 0));
+      writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 3, sy, 0));
+      // Crosshairs at intersections
+      writer.addLine(point3d(drawWin.x0, sy - 2, 0), point3d(drawWin.x0, sy + 2, 0));
+      writer.addLine(point3d(drawWin.x1, sy - 2, 0), point3d(drawWin.x1, sy + 2, 0));
+      // Coordinates (rounded)
       const world = toWorld(drawWin.x0, sy);
-      writer.addText(point3d(drawWin.x0 - 18, sy, 0), 1.8, world.y.toFixed(2));
+      const roundedY = Math.round(world.y / roundTo) * roundTo;
+      writer.addText(point3d(drawWin.x0 - 22, sy, 0), 2, String(roundedY));
     }
 
     if (meta?.includeTitleBlock) {
