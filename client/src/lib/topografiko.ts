@@ -22,7 +22,7 @@ export type TEEData = {
   rings: Point[][];
 };
 
-export type TEECandidate = TEEData;
+export type TEECandidate = TEEData & { objectId?: string; containsCentroid?: boolean };
 
 export type NeighborParcel = {
   kaek: string;
@@ -131,41 +131,106 @@ export async function fetchTEEData(rings: Point[][]): Promise<TEEData | null> {
   return candidates[0] || null;
 }
 
+function pointInRing(point: Point, ring: Point[]) {
+  const usable = stripClosingPoint(ring);
+  let inside = false;
+  for (let i = 0, j = usable.length - 1; i < usable.length; j = i++) {
+    const xi = usable[i].x;
+    const yi = usable[i].y;
+    const xj = usable[j].x;
+    const yj = usable[j].y;
+    const intersects = ((yi > point.y) !== (yj > point.y)) &&
+      (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+async function fetchTEERawCandidates(params: URLSearchParams) {
+  const url = `https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/dynamicLayer/query?${params.toString()}`;
+  const response = await fetch(url);
+  const data = await response.json();
+  return (data?.features || []) as { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }[];
+}
+
+function normalizeTEECandidate(feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }, parcelCentroid: Point): TEECandidate {
+  const attrs = feature.attributes || {};
+  const rings = (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => {
+    const [lon, lat] = transformFromGGRS87(point[0], point[1]);
+    return { x: lon, y: lat };
+  }));
+  return {
+    objectId: String(attrs.OBJECTID || ""),
+    otNumber: String(attrs.OT_NUM || ""),
+    fek: String(attrs.FEK || ""),
+    apofEidos: String(attrs.APOF_EIDOS || ""),
+    municipality: String(attrs.KALL_DHM_NAME || ""),
+    rings,
+    containsCentroid: rings.some((ring) => pointInRing(parcelCentroid, ring)),
+  } satisfies TEECandidate;
+}
+
 export async function fetchTEECandidates(rings: Point[][]): Promise<TEECandidate[]> {
   if (!rings?.[0]?.length) return [];
-  const points = rings[0];
+  const points = stripClosingPoint(rings[0]);
   const lons = points.map((p) => p.x);
   const lats = points.map((p) => p.y);
+  const parcelCentroid = centroidOfRing(points);
   const [xmin, ymin] = transformToGGRS87(Math.min(...lons), Math.min(...lats));
   const [xmax, ymax] = transformToGGRS87(Math.max(...lons), Math.max(...lats));
-  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 2100 } });
-  const params = new URLSearchParams({
+  const [cx, cy] = transformToGGRS87(parcelCentroid.x, parcelCentroid.y);
+
+  const commonParams = {
     f: "json",
     returnGeometry: "true",
-    spatialRel: "esriSpatialRelIntersects",
-    geometry,
-    geometryType: "esriGeometryEnvelope",
     inSR: "2100",
     outFields: "OBJECTID,FEK,OT_NUM,APOF_EIDOS,KALL_DHM_NAME",
     outSR: "2100",
     layer: JSON.stringify({ source: { type: "mapLayer", mapLayerId: 6 } }),
+  };
+
+  const envelopeParams = new URLSearchParams({
+    ...commonParams,
+    spatialRel: "esriSpatialRelIntersects",
+    geometry: JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 2100 } }),
+    geometryType: "esriGeometryEnvelope",
   });
-  const url = `https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/dynamicLayer/query?${params.toString()}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  const features = data?.features || [];
-  return features.map((feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }) => {
-    const attrs = feature.attributes || {};
-    return {
-      otNumber: String(attrs.OT_NUM || ""),
-      fek: String(attrs.FEK || ""),
-      apofEidos: String(attrs.APOF_EIDOS || ""),
-      municipality: String(attrs.KALL_DHM_NAME || ""),
-      rings: (feature.geometry?.rings || []).map((ring: number[][]) => ring.map((point: number[]) => {
-        const [lon, lat] = transformFromGGRS87(point[0], point[1]);
-        return { x: lon, y: lat };
-      })),
-    } satisfies TEECandidate;
+
+  const pointParams = new URLSearchParams({
+    ...commonParams,
+    spatialRel: "esriSpatialRelIntersects",
+    geometry: JSON.stringify({ x: cx, y: cy, spatialReference: { wkid: 2100 } }),
+    geometryType: "esriGeometryPoint",
+  });
+
+  const [envelopeFeatures, pointFeatures] = await Promise.all([
+    fetchTEERawCandidates(envelopeParams),
+    fetchTEERawCandidates(pointParams),
+  ]);
+
+  const prioritizedObjectIds = new Set(
+    pointFeatures
+      .map((feature) => String(feature.attributes?.OBJECTID || ""))
+      .filter(Boolean),
+  );
+
+  const merged = new Map<string, TEECandidate>();
+  [...pointFeatures, ...envelopeFeatures].forEach((feature) => {
+    const candidate = normalizeTEECandidate(feature, parcelCentroid);
+    const key = candidate.objectId || `${candidate.otNumber}-${candidate.fek}`;
+    if (!merged.has(key)) {
+      merged.set(key, candidate);
+    }
+  });
+
+  return Array.from(merged.values()).sort((a, b) => {
+    const aPriority = prioritizedObjectIds.has(a.objectId || "") ? 1 : 0;
+    const bPriority = prioritizedObjectIds.has(b.objectId || "") ? 1 : 0;
+    if (aPriority !== bPriority) return bPriority - aPriority;
+    const aContains = a.containsCentroid ? 1 : 0;
+    const bContains = b.containsCentroid ? 1 : 0;
+    if (aContains !== bContains) return bContains - aContains;
+    return a.otNumber.localeCompare(b.otNumber, "el");
   });
 }
 

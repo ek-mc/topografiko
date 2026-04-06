@@ -646,13 +646,14 @@ export default function Home({ initialKaek }: HomeProps) {
               spellCheck={false}
             />
 
-            <button
+              <button
               type="button"
               onClick={handleSubmit}
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-transform active:scale-[0.98]"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-800 text-white transition-transform active:scale-[0.98] dark:bg-primary dark:text-primary-foreground"
               aria-label="Search"
               title="Search"
             >
+
               <Search className="h-5 w-5" />
             </button>
             </div>
