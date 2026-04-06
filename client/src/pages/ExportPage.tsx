@@ -8,11 +8,13 @@ import mainUseMap from "@shared/main-use-map.json";
 import {
   boundsFromPoints,
   centroidOfRing,
+  CoordinateRow,
   downloadText,
   fetchParcelByKaek,
   fetchParcelsInOT,
   fetchTEECandidates,
   filterAdjacentParcels,
+  formatCoordinateRows,
   NeighborParcel,
   ParcelData,
   pathFromRingWithBounds,
@@ -127,24 +129,21 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
   const previewBounds = useMemo(() => {
     const points = [
-      ...contextParcels,
       ...previewParcels,
-      ...teeCandidates.map((candidate) => ({ rings: candidate.rings } as { rings: Point[][] })),
+      ...(teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, contextParcels, teeCandidates]);
+  }, [previewParcels, teeData]);
 
-  const coords = useMemo(
-    () =>
-      parcel
-        ? stripClosingPoint(parcel.rings[0]).map((p, i) => ({
-            i: i + 1,
-            x: String(p.x),
-            y: String(p.y),
-          }))
-        : [],
-    [parcel],
-  );
+  const coords = useMemo<CoordinateRow[]>(() => {
+    if (teeData?.rings?.[0]?.length) {
+      return formatCoordinateRows(teeData.rings[0], "T");
+    }
+    if (parcel?.rings?.[0]?.length) {
+      return formatCoordinateRows(parcel.rings[0], "P");
+    }
+    return [];
+  }, [parcel, teeData]);
 
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
@@ -168,7 +167,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           ot: teeData?.otNumber,
           municipality: teeData?.municipality,
           region: "(#Perifereia)",
-          includeTitleBlock: mode === "full",
+          includeTitleBlock: showTitleBlock && mode === "full",
           coords,
           paperSize,
           scaleDenominator,
@@ -387,8 +386,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           return (
                             <g>
                               <circle cx={c.x} cy={c.y} r="10" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
-                              <text x={c.x} y={c.y - 0.5} fontSize="4.2" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
-                              <text x={c.x} y={c.y + 5} fontSize="4.2" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
+                              <text x={c.x} y={c.y - 3.6} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
+                              <text x={c.x} y={c.y + 3.6} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
                             </g>
                           );
                         })()}
@@ -405,14 +404,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           });
                         })}
                         <g>
-                          <rect x="246" y="246" width="68" height="52" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
-                          <text x="250" y="254" fontSize="5.3" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
-                          <line x1="250" y1="262" x2="270" y2="262" stroke="#22c55e" strokeWidth="1.6" />
-                          <text x="276" y="265" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
-                          <line x1="250" y1="276" x2="270" y2="276" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.3" />
-                          <text x="276" y="279" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
-                          <line x1="250" y1="290" x2="270" y2="290" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
-                          <text x="276" y="293" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
+                          <rect x="166" y="252" width="72" height="44" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
+                          <text x="170" y="260" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
+                          <line x1="170" y1="268" x2="190" y2="268" stroke="#22c55e" strokeWidth="1.6" />
+                          <text x="195" y="271" fontSize="4.7" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
+                          <line x1="170" y1="280" x2="190" y2="280" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.2" />
+                          <text x="195" y="283" fontSize="4.7" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
+                          <line x1="170" y1="292" x2="190" y2="292" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
+                          <text x="195" y="295" fontSize="4.7" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
                         </g>
                         <text x="250" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
                       </svg>
@@ -449,15 +448,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     </Panel>
                   ) : null}
 
-                  {showCoords ? (
+                        {showCoords ? (
                     <Panel title="Συντεταγμένες Κορυφών">
-                      <div className="grid grid-cols-[32px_1fr_1fr] gap-x-2 gap-y-1 text-xs">
-                        <div className="font-medium text-muted-foreground">#</div>
+                      <div className="grid grid-cols-[48px_1fr_1fr] gap-x-2 gap-y-1 text-xs">
+                        <div className="font-medium text-muted-foreground">Σημείο</div>
                         <div className="font-medium text-muted-foreground">X</div>
                         <div className="font-medium text-muted-foreground">Y</div>
                         {coords.slice(0, 8).map((row) => (
-                          <Fragment key={row.i}>
-                            <div>{row.i}</div>
+                          <Fragment key={row.label}>
+                            <div>{row.label}</div>
                             <div>{row.x}</div>
                             <div>{row.y}</div>
                           </Fragment>
@@ -466,14 +465,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     </Panel>
                   ) : null}
 
+
                   {showLegend ? (
                     <Panel title="Υπόμνημα / Layers">
                       <div className="space-y-2 text-xs text-muted-foreground">
                         <div className="flex items-center gap-2"><span className="h-px w-10 bg-green-500" />ρυμοτομική γραμμή</div>
-                        <div className="flex items-center gap-2"><span className="h-px w-10 bg-red-500" />οικοδομική γραμμή</div>
+                        <div className="flex items-center gap-2"><span className="h-px w-10 bg-foreground" />όριο οικοπέδου</div>
                         <div className="flex items-center gap-2"><span className="h-px w-10 border-t border-dashed border-muted-foreground" />όριο οικοπέδων</div>
-                        <div>Σταυροί καννάβου σε ξεχωριστό layer συντεταγμένων.</div>
-                        <div>Το οικόπεδο τοποθετείται στο κέντρο του πλαισίου για όλες τις κλίμακες.</div>
+                        <div>Ο πίνακας συντεταγμένων ακολουθεί τις ίδιες κορυφές που σημειώνονται στο σχέδιο.</div>
+                        <div>Οι κορυφές Ο.Τ. σημειώνονται ως Τ1, Τ2, … και οι κορυφές οικοπέδου ως Α, Β, Γ, …</div>
                       </div>
                     </Panel>
                   ) : null}
