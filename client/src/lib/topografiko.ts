@@ -306,31 +306,49 @@ export function toDXF(
     // coordinate frame ticks with crosshairs and rounded coords
     const tickStep = 50; // mm on paper
     const roundTo = 50; // round world coords to nearest 50
+    const seenX = new Set<number>();
+    const seenY = new Set<number>();
     
     for (let sx = drawWin.x0; sx <= drawWin.x1 + 0.1; sx += tickStep) {
-      // Ticks
-      writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 3, 0));
-      writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 3, 0));
-      // Crosshairs at intersections
-      writer.addLine(point3d(sx - 2, drawWin.y0, 0), point3d(sx + 2, drawWin.y0, 0));
-      writer.addLine(point3d(sx - 2, drawWin.y1, 0), point3d(sx + 2, drawWin.y1, 0));
-      // Coordinates (rounded)
       const world = toWorld(sx, drawWin.y0);
       const roundedX = Math.round(world.x / roundTo) * roundTo;
-      writer.addText(point3d(sx - 8, drawWin.y0 - 7, 0), 2, String(roundedX));
+      
+      // Skip duplicates
+      if (seenX.has(roundedX)) continue;
+      seenX.add(roundedX);
+      
+      // Ticks
+      writer.addLine(point3d(sx, drawWin.y0, 0), point3d(sx, drawWin.y0 - 4, 0));
+      writer.addLine(point3d(sx, drawWin.y1, 0), point3d(sx, drawWin.y1 + 4, 0));
+      // Cross (+) at bottom
+      writer.addLine(point3d(sx - 3, drawWin.y0, 0), point3d(sx + 3, drawWin.y0, 0));
+      writer.addLine(point3d(sx, drawWin.y0 - 3, 0), point3d(sx, drawWin.y0 + 3, 0));
+      // Cross (+) at top
+      writer.addLine(point3d(sx - 3, drawWin.y1, 0), point3d(sx + 3, drawWin.y1, 0));
+      writer.addLine(point3d(sx, drawWin.y1 - 3, 0), point3d(sx, drawWin.y1 + 3, 0));
+      // Coordinates (inside the frame if possible)
+      writer.addText(point3d(sx - 10, drawWin.y0 + 6, 0), 2.5, String(roundedX));
     }
     
     for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
-      // Ticks
-      writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 3, sy, 0));
-      writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 3, sy, 0));
-      // Crosshairs at intersections
-      writer.addLine(point3d(drawWin.x0, sy - 2, 0), point3d(drawWin.x0, sy + 2, 0));
-      writer.addLine(point3d(drawWin.x1, sy - 2, 0), point3d(drawWin.x1, sy + 2, 0));
-      // Coordinates (rounded)
       const world = toWorld(drawWin.x0, sy);
       const roundedY = Math.round(world.y / roundTo) * roundTo;
-      writer.addText(point3d(drawWin.x0 - 22, sy, 0), 2, String(roundedY));
+      
+      // Skip duplicates
+      if (seenY.has(roundedY)) continue;
+      seenY.add(roundedY);
+      
+      // Ticks
+      writer.addLine(point3d(drawWin.x0, sy, 0), point3d(drawWin.x0 - 4, sy, 0));
+      writer.addLine(point3d(drawWin.x1, sy, 0), point3d(drawWin.x1 + 4, sy, 0));
+      // Cross (+) at left
+      writer.addLine(point3d(drawWin.x0 - 3, sy, 0), point3d(drawWin.x0 + 3, sy, 0));
+      writer.addLine(point3d(drawWin.x0, sy - 3, 0), point3d(drawWin.x0, sy + 3, 0));
+      // Cross (+) at right
+      writer.addLine(point3d(drawWin.x1 - 3, sy, 0), point3d(drawWin.x1 + 3, sy, 0));
+      writer.addLine(point3d(drawWin.x1, sy - 3, 0), point3d(drawWin.x1, sy + 3, 0));
+      // Coordinates (inside the frame)
+      writer.addText(point3d(drawWin.x0 + 4, sy + 1, 0), 2.5, String(roundedY));
     }
 
     if (meta?.includeTitleBlock) {
@@ -343,9 +361,9 @@ export function toDXF(
       writer.addLine(point3d(x1, y1, 0), point3d(x0, y1, 0));
       writer.addLine(point3d(x0, y1, 0), point3d(x0, y0, 0));
       const lines = [
-        ["Engineer", "grey placeholder"],
-        ["Project", "Topografiko Diagramma"],
-        ["Location", `O.T. ${meta.ot || "***"}, Dimou ${meta.municipality || "(#Municipality)"}, ${meta.region || "(#Region)"}`],
+        ["Μελετητής", "-"],
+        ["Έργο", "Τοπογραφικό Διάγραμμα"],
+        ["Θέση", `Ο.Τ. ${meta.ot || "***"}, Δήμου ${meta.municipality || "-"}`],
         ["KAEK", meta.kaek || "-"],
       ];
       let y = y1 - 10;
@@ -354,7 +372,7 @@ export function toDXF(
         writer.addText(point3d(x0 + 34, y, 0), 2.2, value);
         y -= 8;
       });
-      writer.addText(point3d(x0 + 4, y - 2, 0), 2.2, 'Coords EGSA87');
+      writer.addText(point3d(x0 + 4, y - 2, 0), 2.2, 'Συντεταγμένες ΕΓΣΑ87');
       y -= 8;
       (meta.coords || []).slice(0, 20).forEach((row) => {
         writer.addText(point3d(x0 + 4, y, 0), 1.8, `${row.i}`);
