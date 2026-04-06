@@ -232,7 +232,7 @@ export function toKML(name: string, parcels: { kaek: string; rings: Point[][] }[
 
 export function toDXF(
   parcels: { kaek: string; rings: Point[][] }[],
-  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[]; paperSize?: "A3" | "A4"; scaleDenominator?: number },
+  meta?: { kaek?: string; ot?: string; municipality?: string; region?: string; includeTitleBlock?: boolean; coords?: { i: number; x: string; y: string }[]; paperSize?: "A4" | "A3" | "A1"; scaleDenominator?: number },
 ) {
   const writer = new DxfWriter();
   const projectedParcels = parcels.map((parcel) => ({
@@ -245,23 +245,37 @@ export function toDXF(
 
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
-  const paper = paperSize === "A3" ? { width: 420, height: 297 } : { width: 297, height: 210 };
-  const margin = 10;
-  const titleBlockWidth = 120;
+  const paper = paperSize === "A3" ? { width: 420, height: 297 } : paperSize === "A1" ? { width: 841, height: 594 } : { width: 297, height: 210 };
+  const margin = 15;
+  const titleBlockWidth = 140;
+  const coordSpace = 35;
   const drawWin = {
-    x0: margin,
-    y0: margin,
+    x0: margin + coordSpace,
+    y0: margin + 10,
     x1: paper.width - titleBlockWidth - margin,
-    y1: paper.height - margin,
+    y1: paper.height - margin - coordSpace,
   };
 
-  const points = projectedParcels.flatMap((parcel) => stripClosingPoint(parcel.rings[0]));
-  if (points.length) {
-    const parcelOnlyPoints = stripClosingPoint(projectedParcels[0].rings[0]);
-    const bounds = boundsFromPoints(parcelOnlyPoints.length ? parcelOnlyPoints : points);
+  const mainParcel = projectedParcels[0];
+  const parcelPoints = stripClosingPoint(mainParcel.rings[0]);
+  
+  if (parcelPoints.length) {
+    const bounds = boundsFromPoints(parcelPoints);
+    
+    // DEBUG: Check if projection worked (EGSA87 = large numbers, WGS84 = small numbers)
+    console.log('DEBUG bounds:', bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
+    
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
-    const scale = 1000 / scaleDenominator; // meters -> mm on paper
+    
+    // Calculate proper scale for 1:200 or fit-to-window
+    const parcelWidth = bounds.maxX - bounds.minX;
+    const parcelHeight = bounds.maxY - bounds.minY;
+    const winWidth = drawWin.x1 - drawWin.x0;
+    const winHeight = drawWin.y1 - drawWin.y0;
+    const fitScale = Math.min(winWidth / parcelWidth, winHeight / parcelHeight) * 0.85;
+    const requestedScale = 1000 / scaleDenominator;
+    const scale = Math.min(fitScale, requestedScale);
     const windowCenterX = (drawWin.x0 + drawWin.x1) / 2;
     const windowCenterY = (drawWin.y0 + drawWin.y1) / 2;
     const toSheet = (p: Point) => ({
@@ -326,8 +340,9 @@ export function toDXF(
       // Cross (+) at top
       writer.addLine(point3d(sx - 3, drawWin.y1, 0), point3d(sx + 3, drawWin.y1, 0));
       writer.addLine(point3d(sx, drawWin.y1 - 3, 0), point3d(sx, drawWin.y1 + 3, 0));
-      // Coordinates (inside the frame if possible)
-      writer.addText(point3d(sx - 10, drawWin.y0 + 6, 0), 2.5, String(roundedX));
+      // Coordinates - ensure full number is shown
+      const xText = String(Math.round(roundedX));
+      writer.addText(point3d(sx - 12, drawWin.y0 + 8, 0), 2.2, xText);
     }
     
     for (let sy = drawWin.y0; sy <= drawWin.y1 + 0.1; sy += tickStep) {
@@ -347,8 +362,9 @@ export function toDXF(
       // Cross (+) at right
       writer.addLine(point3d(drawWin.x1 - 3, sy, 0), point3d(drawWin.x1 + 3, sy, 0));
       writer.addLine(point3d(drawWin.x1, sy - 3, 0), point3d(drawWin.x1, sy + 3, 0));
-      // Coordinates (inside the frame)
-      writer.addText(point3d(drawWin.x0 + 4, sy + 1, 0), 2.5, String(roundedY));
+      // Coordinates - ensure full number is shown
+      const yText = String(Math.round(roundedY));
+      writer.addText(point3d(drawWin.x0 + 4, sy + 2, 0), 2.2, yText);
     }
 
     if (meta?.includeTitleBlock) {
