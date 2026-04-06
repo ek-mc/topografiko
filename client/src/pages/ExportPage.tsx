@@ -7,9 +7,11 @@ import { useTheme } from "@/contexts/ThemeContext";
 import mainUseMap from "@shared/main-use-map.json";
 import {
   boundsFromPoints,
+  BuildingTermsData,
   centroidOfRing,
   CoordinateRow,
   downloadText,
+  fetchBuildingTerms,
   fetchParcelByKaek,
   fetchParcelsInOT,
   fetchTEECandidates,
@@ -63,6 +65,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [parcel, setParcel] = useState<ParcelData | null>(null);
   const [teeData, setTeeData] = useState<TEEData | null>(null);
   const [teeCandidates, setTeeCandidates] = useState<TEEData[]>([]);
+  const [buildingTerms, setBuildingTerms] = useState<BuildingTermsData | null>(null);
   const [otParcels, setOtParcels] = useState<NeighborParcel[]>([]);
   const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,8 +87,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setParcel(result);
 
       if (result) {
-        const candidates = await fetchTEECandidates(result.rings);
+        const [candidates, terms] = await Promise.all([
+          fetchTEECandidates(result.rings),
+          fetchBuildingTerms(result.rings),
+        ]);
         setTeeCandidates(candidates);
+        setBuildingTerms(terms);
         const tee = candidates[0] || null;
         setTeeData(tee);
 
@@ -106,6 +113,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           setOtParcels([]);
           setContextParcels([]);
         }
+      } else {
+        setBuildingTerms(null);
       }
 
       setLoading(false);
@@ -136,14 +145,29 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [previewParcels, teeData]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
-    if (teeData?.rings?.[0]?.length) {
-      return formatCoordinateRows(teeData.rings[0], "T");
+    if (parcel?.officialRingsGgrs87?.[0]?.length) {
+      return formatCoordinateRows(parcel.officialRingsGgrs87[0], "P", true);
     }
     if (parcel?.rings?.[0]?.length) {
       return formatCoordinateRows(parcel.rings[0], "P");
     }
     return [];
-  }, [parcel, teeData]);
+  }, [parcel]);
+
+  const buildingTermsRows = useMemo(() => {
+    if (!buildingTerms) return [] as Array<[string, string]>;
+    return [
+      ["Σ.Δ.", buildingTerms.sd || ""],
+      ["Τομέας Σ.Δ.", buildingTerms.sdSector || ""],
+      ["Κάλυψη", buildingTerms.coverage || ""],
+      ["Μέγ. κάλυψη", buildingTerms.maxCoverageArea || ""],
+      ["Μέγ. ύψος", buildingTerms.maxHeight || ""],
+      ["Όροφοι", buildingTerms.floors || ""],
+      ["Ελάχ. εμβαδό", buildingTerms.minArea || ""],
+      ["Ελάχ. πρόσωπο", buildingTerms.minFrontage || ""],
+      ["Οικ. σύστημα", buildingTerms.buildingSystem || ""],
+    ].filter(([, value]) => Boolean(value));
+  }, [buildingTerms]);
 
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
@@ -172,6 +196,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           paperSize,
           scaleDenominator,
           otRings: teeData?.rings,
+          buildingTerms,
         }),
         "application/dxf",
         false,
@@ -320,7 +345,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     {previewBounds ? (
                       <svg viewBox="0 0 320 320" className="aspect-square w-full">
                         <rect x="0" y="0" width="320" height="320" fill={isDark ? "#0f172a" : "#f8fafc"} />
-                        <rect x="24" y="18" width="214" height="278" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
+                        <rect x="18" y="18" width="220" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
                         <line x1="238" y1="8" x2="238" y2="312" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
                         <NorthArrow isDark={isDark} />
                         {teeCandidates.flatMap((candidate) => candidate.rings).map((ring, index) => (
@@ -385,9 +410,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           const c = projectPoint(centroidOfRing(otRing), previewBounds);
                           return (
                             <g>
-                              <circle cx={c.x} cy={c.y} r="10" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
-                              <text x={c.x} y={c.y - 3.6} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
-                              <text x={c.x} y={c.y + 3.6} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
+                              <rect x={c.x - 12} y={c.y - 7} width="24" height="14" rx="1.5" fill="none" stroke={isDark ? "#e2e8f0" : "#111827"} strokeWidth="1" />
+                              <text x={c.x} y={c.y - 1.8} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>Ο.Τ.</text>
+                              <text x={c.x} y={c.y + 4.2} fontSize="4.1" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{teeData?.otNumber || "-"}</text>
                             </g>
                           );
                         })()}
@@ -404,14 +429,16 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           });
                         })}
                         <g>
-                          <rect x="166" y="252" width="72" height="44" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
-                          <text x="170" y="260" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
-                          <line x1="170" y1="268" x2="190" y2="268" stroke="#22c55e" strokeWidth="1.6" />
-                          <text x="195" y="271" fontSize="4.7" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
-                          <line x1="170" y1="280" x2="190" y2="280" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.2" />
-                          <text x="195" y="283" fontSize="4.7" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
-                          <line x1="170" y1="292" x2="190" y2="292" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
-                          <text x="195" y="295" fontSize="4.7" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
+                          <rect x="156" y="244" width="82" height="58" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
+                          <text x="162" y="252" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
+                          <line x1="162" y1="261" x2="182" y2="261" stroke="#22c55e" strokeWidth="1.6" />
+                          <text x="187" y="264" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>ρυμοτομική γραμμή</text>
+                          <line x1="162" y1="273" x2="182" y2="273" stroke="#ef4444" strokeWidth="1.4" />
+                          <text x="187" y="276" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>οικοδομική γραμμή</text>
+                          <line x1="162" y1="285" x2="182" y2="285" stroke={isDark ? "#f8fafc" : "#111827"} strokeWidth="1.2" />
+                          <text x="187" y="288" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
+                          <line x1="162" y1="297" x2="182" y2="297" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
+                          <text x="187" y="300" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδων</text>
                         </g>
                         <text x="250" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
                       </svg>
@@ -468,18 +495,52 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
                   {showLegend ? (
                     <Panel title="Υπόμνημα / Layers">
-                      <div className="space-y-2 text-xs text-muted-foreground">
-                        <div className="flex items-center gap-2"><span className="h-px w-10 bg-green-500" />ρυμοτομική γραμμή</div>
-                        <div className="flex items-center gap-2"><span className="h-px w-10 bg-foreground" />όριο οικοπέδου</div>
-                        <div className="flex items-center gap-2"><span className="h-px w-10 border-t border-dashed border-muted-foreground" />όριο οικοπέδων</div>
-                        <div>Ο πίνακας συντεταγμένων ακολουθεί τις ίδιες κορυφές που σημειώνονται στο σχέδιο.</div>
-                        <div>Οι κορυφές Ο.Τ. σημειώνονται ως Τ1, Τ2, … και οι κορυφές οικοπέδου ως Α, Β, Γ, …</div>
+                      <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+                        <div className="space-y-2.5">
+                          <div className="flex items-center gap-2"><span className="h-px w-10 bg-green-500" />ρυμοτομική γραμμή</div>
+                          <div className="flex items-center gap-2"><span className="h-px w-10 bg-red-500" />οικοδομική γραμμή</div>
+                          <div className="flex items-center gap-2"><span className="h-px w-10 bg-foreground" />όριο οικοπέδου</div>
+                          <div className="flex items-center gap-2"><span className="h-px w-10 border-t border-dashed border-muted-foreground" />όριο οικοπέδων</div>
+                          <div>Οι επιγραφές κορυφών του οικοπέδου σημειώνονται ως Α, Β, Γ, … και τοποθετούνται εξωτερικά του περιγράμματος.</div>
+                          <div>Οι ενδείξεις μηκών πλευρών τοποθετούνται εσωτερικά για καθαρότερη ανάγνωση του σχεδίου.</div>
+                        </div>
                       </div>
                     </Panel>
                   ) : null}
 
                   {showTerms ? (
-                    <PlaceholderBlock title="Όροι Δόμησης / Πολεοδομικά Στοιχεία" height="h-28" />
+                    <Panel title="Όροι Δόμησης / Πολεοδομικά Στοιχεία">
+                      {buildingTerms ? (
+                        <div className="space-y-3 text-xs">
+                          <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5">
+                            {buildingTermsRows.map(([label, value]) => (
+                              <Fragment key={label}>
+                                <div className="text-muted-foreground">{label}</div>
+                                <div>{value}</div>
+                              </Fragment>
+                            ))}
+                          </div>
+                          {buildingTerms.notes.length ? (
+                            <div className="space-y-1.5 border-t border-border pt-2 text-muted-foreground">
+                              {buildingTerms.notes.slice(0, 4).map((note, index) => (
+                                <div key={`${index}-${note}`}>{note}</div>
+                              ))}
+                            </div>
+                          ) : null}
+                          {(buildingTerms.sourceFek || buildingTerms.sourceDecisionNumber || buildingTerms.sourceDate) ? (
+                            <div className="border-t border-border pt-2 text-[11px] text-muted-foreground">
+                              {buildingTerms.sourceFek ? <div>ΦΕΚ: {buildingTerms.sourceFek}</div> : null}
+                              {buildingTerms.sourceDecisionNumber ? <div>Αριθ. απόφασης: {buildingTerms.sourceDecisionNumber}</div> : null}
+                              {buildingTerms.sourceDate ? <div>Ημ/νία: {buildingTerms.sourceDate}</div> : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">
+                          Δεν βρέθηκαν διαθέσιμα στοιχεία όρων δόμησης για το επιλεγμένο ακίνητο.
+                        </div>
+                      )}
+                    </Panel>
                   ) : null}
 
                   {mode === "full" ? (
