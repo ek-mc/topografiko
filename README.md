@@ -13,23 +13,6 @@ The application is intentionally designed for **educational and informational us
 | Privacy model | No analytics, no tracking beacons, no Google Maps |
 | Search mode | KAEK search against a clearly identified demo parcel dataset |
 
-## Core functionality
-
-The current prototype opens directly on a full-screen map workspace. A centered search box allows the user to enter a KAEK, while a top control can reopen the same search flow after the overlay is dismissed. When a parcel is loaded, the map zooms to the parcel geometry, displays the parcel outline, calculates simple geometric metrics, and enables local download of the selected export formats.
-
-The interface also includes a compact information control that explains the provenance of the displayed data and links to the relevant official public sources. This keeps attribution available without interrupting the main map experience.
-
-| Feature | Current implementation |
-| --- | --- |
-| Map-first homepage | Yes |
-| Centered KAEK search overlay | Yes |
-| Search dropdown in top bar | Yes |
-| Dismiss search on map click | Yes |
-| Official-source info dialog | Yes |
-| DXF export in browser | Yes |
-| GeoJSON export in browser | Yes |
-| KML export in browser | Yes |
-
 ## Public data sources
 
 The project uses clearly identified public geospatial sources for demonstration and academic reference. The prototype does **not** claim to produce legally valid extracts.
