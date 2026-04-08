@@ -1,28 +1,14 @@
-- [ ] Create the required design brainstorm in `ideas.md` and choose one design direction for the app.
-- [ ] Incorporate the user's supplied cartographic reference imagery into the final visual system, especially stacked survey sheets, parcel-detail compositions, and restrained drafting cues.
-- [ ] Remove analytics and any tracking script from the frontend template.
-- [ ] Ensure there is no AI attribution or agent branding anywhere in the UI or repository files.
-- [ ] Build an academic-ready React web app named `openkaek` for parcel lookup and export.
-- [ ] Use a client-side JavaScript DXF library for local browser-based DXF export where feasible.
-- [ ] Keep the export pipeline explainable for academic presentation, including source geometry to DXF conversion steps.
-- [ ] Clearly identify official Greek government geospatial data sources in the interface and documentation.
-- [ ] Avoid mentioning commercial competitors in the UI and documentation.
-- [ ] Support export workflows centered on DXF, with additional useful formats such as KML and GeoJSON.
-- [ ] Keep the interface presentation-ready for a college setting.
-- [ ] Prepare repository files including README, MIT license, and changelog with `ek-mc` attribution where appropriate.
-- [ ] Create or connect a private GitHub repository named `openkaek` and push the project.
-- [ ] Restructure the home page so the primary first view is a full working map rather than a source-disclosure layout.
-- [ ] Move official public-source attribution behind a compact information button or dialog instead of displaying it prominently on the main page.
-- [ ] Evaluate and implement a reliable frontend basemap, preferring OpenStreetMap if the official Cadastre basemap is not cleanly usable in the static React setup.
-- [ ] Add a basemap selector that offers all three map backgrounds: official cadastre view, satellite view, and OpenStreetMap where feasible in the frontend.
-- [ ] Remove the Google-based map implementation entirely.
-- [ ] Replace the current map engine with a non-Google frontend map stack.
-- [ ] Preserve the official cadastre, satellite, and OSM basemap selector without Google dependencies.
-- [ ] Simplify the layout so it feels closer to a clean cadastral map interface.
-- [ ] Add a centered KAEK search box overlay in the middle of the map.
-- [ ] Hide the centered search overlay when the user clicks on the map canvas.
-- [ ] Add a top search control that expands as a dropdown.
-- [ ] Restore a visible cadastral information layer so parcel boundaries and parcel context appear on the map after an appropriate zoom threshold, rather than loading at all scales.
-- [ ] Add an on-map information readout for zoom level and cursor or tap coordinates in a compact mobile-safe panel.
-- [ ] Review whether a zoom-gated parcel-information overlay or hover/tap state is needed so the map conveys useful cadastral context without overloading the map at small scales.
-- [ ] Match the official Greek Cadastre website behavior as closely as possible for when parcel boundaries and map information appear after zooming in.
+# topografiko — active TODO
+
+## High priority
+- [ ] Verify parcel geometry accuracy with projected coordinates (HGRS87/EGSA87 flow and measurement validation).
+- [ ] Implement production-ready export layout (paper scale presets including 1:200, title block, north arrow).
+- [ ] Finalize data-loading strategy for local JSON enrichment (startup preload vs lazy-load with cache).
+
+## Medium priority
+- [ ] Add lightweight tests for geometry transforms and export serializers.
+- [ ] Add CI checks for `pnpm check` + `pnpm build` on PRs.
+- [ ] Add release checklist (version bump, changelog, tag, release notes).
+
+## Nice to have
+- [ ] Add optional parcel overlay controls (line weight, labels on/off) for presentation mode.
