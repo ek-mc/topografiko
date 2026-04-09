@@ -864,8 +864,8 @@ function edgeAngleDegrees(a: Point, b: Point) {
 function estimateTextWidth(value: string, height: number) {
   return Array.from(encodeDxfText(value)).reduce((sum, char) => {
     if (char === "." || char === ":") return sum + height * 0.24;
-    if (/[0-9]/.test(char)) return sum + height * 0.85;
-    if (/[Α-Ωα-ω]/.test(char)) return sum + height * 0.85;
+    if (/[0-9]/.test(char)) return sum + height * 0.9;
+    if (/[Α-Ωα-ω]/.test(char)) return sum + height * 0.9;
     return sum + height * 0.52;
   }, 0);
 }
