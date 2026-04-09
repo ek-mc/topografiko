@@ -15,6 +15,7 @@ import {
   fetchContextOTs,
   fetchOfficialRoadLabels,
   fetchParcelByKaek,
+  fetchPlanningLinesForOT,
   fetchParcelsInOT,
   fetchTEECandidates,
   filterAdjacentParcels,
@@ -72,6 +73,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
   const [contextOts, setContextOts] = useState<TEEData[]>([]);
   const [officialRoadNames, setOfficialRoadNames] = useState<string[]>([]);
+  const [urbanLines, setUrbanLines] = useState<Point[][]>([]);
+  const [buildingLines, setBuildingLines] = useState<Point[][]>([]);
   const [loading, setLoading] = useState(false);
   const [contextLoading, setContextLoading] = useState(false);
   const [mode, setMode] = useState<ExportMode>("parcel");
@@ -108,6 +111,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setContextParcels([]);
       setContextOts([]);
       setOfficialRoadNames([]);
+      setUrbanLines([]);
+      setBuildingLines([]);
 
       try {
         const result = await fetchParcelByKaek(initialKaek);
@@ -131,6 +136,18 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         const tee = candidates[0] || null;
         setTeeData(tee);
         setLoading(false);
+
+        if (tee?.rings?.length) {
+          void fetchPlanningLinesForOT(tee.rings).then((lines) => {
+            if (cancelled) return;
+            setUrbanLines(lines.urbanLines);
+            setBuildingLines(lines.buildingLines);
+          }).catch(() => {
+            if (cancelled) return;
+            setUrbanLines([]);
+            setBuildingLines([]);
+          });
+        }
 
         void termsPromise.then((terms) => {
           if (cancelled) return;
@@ -303,6 +320,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           otRings: includeOtContext ? teeData?.rings : undefined,
           contextOts: includeFullContext ? contextOts : undefined,
           buildingTerms: showTerms ? buildingTerms : null,
+          urbanLines: includeFullContext ? urbanLines : undefined,
+          buildingLines: includeFullContext ? buildingLines : undefined,
         }),
         "application/dxf",
         false,

@@ -23,6 +23,11 @@ export type TEEData = {
   rings: Point[][];
 };
 
+export type PlanningLinesData = {
+  urbanLines: Point[][]; // layer 11: Ρυμοτομική γραμμή
+  buildingLines: Point[][]; // layer 12: Οικοδομική γραμμή
+};
+
 export type BuildingTermsData = {
   sd?: string;
   sdSector?: string;
@@ -561,6 +566,42 @@ export async function fetchContextOTs(otRings: Point[][], currentOt?: string): P
   });
 }
 
+export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<PlanningLinesData> {
+  const points = otRings.flatMap((ring) => stripClosingPoint(ring));
+  if (!points.length) return { urbanLines: [], buildingLines: [] };
+
+  const projectedPoints = points.map((point) => {
+    const [x, y] = transformToGGRS87(point.x, point.y);
+    return { x, y };
+  });
+  const bounds = boundsFromPoints(projectedPoints);
+  const padding = Math.max(20, Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * 0.5);
+  const envelope = {
+    minX: bounds.minX - padding,
+    minY: bounds.minY - padding,
+    maxX: bounds.maxX + padding,
+    maxY: bounds.maxY + padding,
+  };
+
+  const [urbanFeatures, buildingFeatures] = await Promise.all([
+    fetchTEELayerFeaturesByEnvelope(11, ["OBJECTID"], envelope, true, 500).catch(() => []),
+    fetchTEELayerFeaturesByEnvelope(12, ["OBJECTID"], envelope, true, 500).catch(() => []),
+  ]);
+
+  const toPaths = (features: TEERawFeature[]) =>
+    features.flatMap((feature) => (feature.geometry?.paths || []).map((path) =>
+      path.map((point) => {
+        const [lon, lat] = transformFromGGRS87(point[0], point[1]);
+        return { x: lon, y: lat };
+      }),
+    ));
+
+  return {
+    urbanLines: toPaths(urbanFeatures),
+    buildingLines: toPaths(buildingFeatures),
+  };
+}
+
 export async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string | undefined): Promise<NeighborParcel[]> {
   const geometry = JSON.stringify({
     rings: otRings.map((ring) => ring.map((p) => [p.x, p.y])),
@@ -994,6 +1035,8 @@ export function toDXF(
     otRings?: Point[][];
     contextOts?: TEEData[];
     buildingTerms?: BuildingTermsData | null;
+    urbanLines?: Point[][];
+    buildingLines?: Point[][];
   },
 ) {
   const writer = new DxfWriter();
@@ -1038,6 +1081,18 @@ export function toDXF(
       const [x, y] = transformToGGRS87(p.x, p.y);
       return { x, y };
     })),
+  }));
+  const projectedUrbanLines = (meta?.urbanLines || []).map((path) => path.map((p) => {
+    const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
+    if (isLikelyGgrs) return { x: p.x, y: p.y };
+    const [x, y] = transformToGGRS87(p.x, p.y);
+    return { x, y };
+  }));
+  const projectedBuildingLines = (meta?.buildingLines || []).map((path) => path.map((p) => {
+    const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
+    if (isLikelyGgrs) return { x: p.x, y: p.y };
+    const [x, y] = transformToGGRS87(p.x, p.y);
+    return { x, y };
   }));
 
   const paperSize = meta?.paperSize || "A3";
@@ -1167,6 +1222,28 @@ export function toDXF(
       addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
       addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
     }
+  });
+
+  projectedUrbanLines.forEach((path) => {
+    const pts = stripClosingPoint(path);
+    if (pts.length < 2) return;
+    const sheetPoints = pts.map(toSheet);
+    sheetPoints.forEach((start, index) => {
+      if (index === sheetPoints.length - 1) return;
+      const end = sheetPoints[index + 1];
+      addMaskedSheetLine(start, end, { layerName: "OT_BOUNDARY", colorNumber: 3 });
+    });
+  });
+
+  projectedBuildingLines.forEach((path) => {
+    const pts = stripClosingPoint(path);
+    if (pts.length < 2) return;
+    const sheetPoints = pts.map(toSheet);
+    sheetPoints.forEach((start, index) => {
+      if (index === sheetPoints.length - 1) return;
+      const end = sheetPoints[index + 1];
+      addMaskedSheetLine(start, end, { layerName: "BUILDING_LINE", colorNumber: 1 });
+    });
   });
 
   projectedParcels.slice(1).forEach((parcel) => {
