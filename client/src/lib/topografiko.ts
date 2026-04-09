@@ -1418,13 +1418,24 @@ export function toDXF(
       }
     });
 
+    if (!Number.isFinite(bestScore) || bestScore === Number.NEGATIVE_INFINITY) return;
+
     const bestSheet = toSheet(bestWorld);
     const x = bestSheet.x;
     const y = bestSheet.y;
-    addDxfLine(writer, { x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
-    addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
-    addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
-    addDxfLine(writer, { x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    const rect = {
+      minX: x - halfW,
+      maxX: x + halfW,
+      minY: y - halfH,
+      maxY: y + halfH,
+    };
+    if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return;
+    if (!(rect.maxX < legendMaskRect.minX || rect.minX > legendMaskRect.maxX || rect.maxY < legendMaskRect.minY || rect.minY > legendMaskRect.maxY)) return;
+
+    addMaskedSheetLine({ x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addMaskedSheetLine({ x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addMaskedSheetLine({ x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addMaskedSheetLine({ x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
     addCenteredDxfText(writer, x, y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
   };
 
