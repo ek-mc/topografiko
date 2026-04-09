@@ -77,13 +77,13 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [buildingLines, setBuildingLines] = useState<Point[][]>([]);
   const [loading, setLoading] = useState(false);
   const [contextLoading, setContextLoading] = useState(false);
-  const [mode, setMode] = useState<ExportMode>("parcel");
+  const [mode, setMode] = useState<ExportMode>("full");
   const [showCoords, setShowCoords] = useState(true);
   const [showParcelData, setShowParcelData] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
-  const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A3");
+  const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
 
   useEffect(() => {
