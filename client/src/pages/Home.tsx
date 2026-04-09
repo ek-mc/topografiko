@@ -889,13 +889,9 @@ export default function Home({ initialKaek }: HomeProps) {
                         <g key={neighbor.kaek}>
                           <path
                             d={neighborPath}
-                            fill={neighbor.hasUndividedOwnership
-                              ? (isDark ? "rgba(37,99,235,0.16)" : "rgba(37,99,235,0.10)")
-                              : (isDark ? "rgba(148,163,184,0.14)" : "rgba(148,163,184,0.10)")}
-                            stroke={neighbor.hasUndividedOwnership
-                              ? (isDark ? "#60a5fa" : "#1d4ed8")
-                              : (isDark ? "#cbd5e1" : "#94a3b8")}
-                            strokeWidth={neighbor.hasUndividedOwnership ? "1.6" : "1.1"}
+                            fill={isDark ? "rgba(148,163,184,0.14)" : "rgba(148,163,184,0.10)"}
+                            stroke={isDark ? "#cbd5e1" : "#94a3b8"}
+                            strokeWidth="1.1"
                             className="cursor-pointer"
                             onClick={() => {
                               setQuery(neighbor.kaek);
@@ -929,13 +925,9 @@ export default function Home({ initialKaek }: HomeProps) {
                     })}
                     <path
                       d={pathFromRingWithBounds(primaryRing, blockBounds)}
-                      fill={parcel.hasUndividedOwnership
-                        ? (isDark ? "rgba(37,99,235,0.22)" : "rgba(37,99,235,0.12)")
-                        : (isDark ? "rgba(96,165,250,0.16)" : "rgba(59,130,246,0.08)")}
-                      stroke={parcel.hasUndividedOwnership
-                        ? (isDark ? "#93c5fd" : "#1d4ed8")
-                        : (isDark ? "#93c5fd" : "#60a5fa")}
-                      strokeWidth={parcel.hasUndividedOwnership ? "2.6" : "2.2"}
+                      fill={isDark ? "rgba(96,165,250,0.16)" : "rgba(59,130,246,0.08)"}
+                      stroke={isDark ? "#93c5fd" : "#60a5fa"}
+                      strokeWidth="2.2"
                       className="cursor-pointer"
                       onClick={() => {
                         setQuery(parcel.kaek);
@@ -962,9 +954,6 @@ export default function Home({ initialKaek }: HomeProps) {
                       );
                     })()}
                   </svg>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Έντονο μπλε περίγραμμα = ένδειξη συνιδιοκτησίας από query (PROP_VERT/PROP_HOR).
-                  </p>
                 </div>
               ) : null}
 
