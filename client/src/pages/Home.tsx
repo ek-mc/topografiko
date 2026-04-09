@@ -18,6 +18,10 @@ type ParcelData = {
   description: string;
   link: string;
   rings: Point[][];
+  percentage: number | null;
+  propVert: number | null;
+  propHor: number | null;
+  hasUndividedOwnership: boolean;
   raw: Record<string, unknown>;
 };
 
@@ -37,6 +41,10 @@ type NeighborParcel = {
   kaek: string;
   mainUse: string;
   area: number | null;
+  percentage: number | null;
+  propVert: number | null;
+  propHor: number | null;
+  hasUndividedOwnership: boolean;
   rings: Point[][];
 };
 
@@ -221,6 +229,10 @@ async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
   if (!feature?.geometry?.rings?.length) return null;
 
   const kaekValue = feature.attributes?.KAEK || normalized;
+  const percentage = feature.attributes?.PERCENTAGE ?? null;
+  const propVert = feature.attributes?.PROP_VERT ?? null;
+  const propHor = feature.attributes?.PROP_HOR ?? null;
+
   return {
     kaek: kaekValue,
     otaCode: String(kaekValue).slice(0, 5),
@@ -232,6 +244,10 @@ async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
     rings: feature.geometry.rings.map((ring: number[][]) =>
       ring.map((point: number[]) => ({ x: point[0], y: point[1] })),
     ),
+    percentage,
+    propVert,
+    propHor,
+    hasUndividedOwnership: Boolean((propVert ?? 0) > 0 || (propHor ?? 0) > 0),
     raw: feature.attributes || {},
   };
 }
@@ -365,7 +381,7 @@ async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string): Promi
     geometryType: 'esriGeometryPolygon',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'KAEK,MAIN_USE,AREA',
+    outFields: 'KAEK,MAIN_USE,AREA,PERCENTAGE,PROP_VERT,PROP_HOR',
     returnGeometry: 'true',
     outSR: '4326',
     resultRecordCount: '200',
@@ -377,12 +393,21 @@ async function fetchParcelsInOT(otRings: Point[][], currentKaek?: string): Promi
     if (!response.ok) return [];
     const data = await response.json();
     const features = data?.features || [];
-    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number }; geometry?: { rings?: number[][][] } }): NeighborParcel => ({
-      kaek: f.attributes.KAEK,
-      mainUse: f.attributes.MAIN_USE || '',
-      area: f.attributes.AREA,
-      rings: (f.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: point[0], y: point[1] }))),
-    })).filter((item: NeighborParcel) => item.kaek !== currentKaek);
+    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number; PERCENTAGE?: number; PROP_VERT?: number; PROP_HOR?: number }; geometry?: { rings?: number[][][] } }): NeighborParcel => {
+      const percentage = f.attributes.PERCENTAGE ?? null;
+      const propVert = f.attributes.PROP_VERT ?? null;
+      const propHor = f.attributes.PROP_HOR ?? null;
+      return {
+        kaek: f.attributes.KAEK,
+        mainUse: f.attributes.MAIN_USE || '',
+        area: f.attributes.AREA,
+        percentage,
+        propVert,
+        propHor,
+        hasUndividedOwnership: Boolean((propVert ?? 0) > 0 || (propHor ?? 0) > 0),
+        rings: (f.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: point[0], y: point[1] }))),
+      };
+    }).filter((item: NeighborParcel) => item.kaek !== currentKaek);
   } catch {
     return [];
   }
@@ -417,7 +442,7 @@ async function fetchNeighbors(rings: Point[][], currentKaek: string): Promise<Ne
     geometryType: 'esriGeometryPolygon',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'KAEK,MAIN_USE,AREA',
+    outFields: 'KAEK,MAIN_USE,AREA,PERCENTAGE,PROP_VERT,PROP_HOR',
     returnGeometry: 'true',
     outSR: '4326',
     resultRecordCount: '20',
@@ -432,12 +457,21 @@ async function fetchNeighbors(rings: Point[][], currentKaek: string): Promise<Ne
     const data = await response.json();
     const features = data?.features || [];
     
-    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number }; geometry?: { rings?: number[][][] } }) => ({
-      kaek: f.attributes.KAEK,
-      mainUse: f.attributes.MAIN_USE || '',
-      area: f.attributes.AREA,
-      rings: (f.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: point[0], y: point[1] }))),
-    })).slice(0, 10);
+    return features.map((f: { attributes: { KAEK: string; MAIN_USE: string; AREA: number; PERCENTAGE?: number; PROP_VERT?: number; PROP_HOR?: number }; geometry?: { rings?: number[][][] } }) => {
+      const percentage = f.attributes.PERCENTAGE ?? null;
+      const propVert = f.attributes.PROP_VERT ?? null;
+      const propHor = f.attributes.PROP_HOR ?? null;
+      return {
+        kaek: f.attributes.KAEK,
+        mainUse: f.attributes.MAIN_USE || '',
+        area: f.attributes.AREA,
+        percentage,
+        propVert,
+        propHor,
+        hasUndividedOwnership: Boolean((propVert ?? 0) > 0 || (propHor ?? 0) > 0),
+        rings: (f.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: point[0], y: point[1] }))),
+      };
+    }).slice(0, 10);
   } catch {
     return [];
   }
@@ -529,6 +563,7 @@ export default function Home({ initialKaek }: HomeProps) {
     
     rows.push(
       { label: "ΟΤΑ / link", value: parcel.link || "—", source: "Κτηματολόγιο", sourceDetail: "LINK από ArcGIS service" },
+      { label: "Καθεστώς", value: parcel.hasUndividedOwnership ? "Εξ αδιαιρέτου" : "Αυτοτελές (χωρίς ένδειξη εξ αδιαιρέτου)", source: "Κτηματολόγιο", sourceDetail: "Σύνθεση από PROP_VERT/PROP_HOR" },
       { label: "Αριθμός Καθέτων", value: attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—", source: "Κτηματολόγιο", sourceDetail: "PROP_VERT από ArcGIS service" },
       { label: "Αριθμός Οριζοντίων", value: attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—", source: "Κτηματολόγιο", sourceDetail: "PROP_HOR από ArcGIS service" },
       { label: "Ποσοστό Κύριας Χρήσης", value: attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—", source: "Κτηματολόγιο", sourceDetail: "PERCENTAGE από ArcGIS service" },
@@ -848,9 +883,13 @@ export default function Home({ initialKaek }: HomeProps) {
                         <g key={neighbor.kaek}>
                           <path
                             d={neighborPath}
-                            fill={isDark ? "rgba(148,163,184,0.14)" : "rgba(148,163,184,0.10)"}
-                            stroke={isDark ? "#cbd5e1" : "#94a3b8"}
-                            strokeWidth="1.1"
+                            fill={neighbor.hasUndividedOwnership
+                              ? (isDark ? "rgba(37,99,235,0.16)" : "rgba(37,99,235,0.10)")
+                              : (isDark ? "rgba(148,163,184,0.14)" : "rgba(148,163,184,0.10)")}
+                            stroke={neighbor.hasUndividedOwnership
+                              ? (isDark ? "#60a5fa" : "#1d4ed8")
+                              : (isDark ? "#cbd5e1" : "#94a3b8")}
+                            strokeWidth={neighbor.hasUndividedOwnership ? "1.6" : "1.1"}
                             className="cursor-pointer"
                             onClick={() => {
                               setQuery(neighbor.kaek);
@@ -884,9 +923,13 @@ export default function Home({ initialKaek }: HomeProps) {
                     })}
                     <path
                       d={pathFromRingWithBounds(primaryRing, blockBounds)}
-                      fill={isDark ? "rgba(96,165,250,0.16)" : "rgba(59,130,246,0.08)"}
-                      stroke={isDark ? "#93c5fd" : "#60a5fa"}
-                      strokeWidth="2.2"
+                      fill={parcel.hasUndividedOwnership
+                        ? (isDark ? "rgba(37,99,235,0.22)" : "rgba(37,99,235,0.12)")
+                        : (isDark ? "rgba(96,165,250,0.16)" : "rgba(59,130,246,0.08)")}
+                      stroke={parcel.hasUndividedOwnership
+                        ? (isDark ? "#93c5fd" : "#1d4ed8")
+                        : (isDark ? "#93c5fd" : "#60a5fa")}
+                      strokeWidth={parcel.hasUndividedOwnership ? "2.6" : "2.2"}
                       className="cursor-pointer"
                       onClick={() => {
                         setQuery(parcel.kaek);
@@ -913,6 +956,9 @@ export default function Home({ initialKaek }: HomeProps) {
                       );
                     })()}
                   </svg>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Έντονο μπλε περίγραμμα = ένδειξη εξ αδιαιρέτου από query (PROP_VERT/PROP_HOR).
+                  </p>
                 </div>
               ) : null}
 
@@ -927,6 +973,7 @@ export default function Home({ initialKaek }: HomeProps) {
                           <th className="px-3 py-2 text-left font-medium">KAEK</th>
                           <th className="px-3 py-2 text-left font-medium">Χρήση</th>
                           <th className="px-3 py-2 text-left font-medium">Εμβαδόν</th>
+                          <th className="px-3 py-2 text-left font-medium">Καθεστώς</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -951,6 +998,7 @@ export default function Home({ initialKaek }: HomeProps) {
                             </td>
                             <td className="px-3 py-2">{neighbor.mainUse || "—"}</td>
                             <td className="px-3 py-2">{neighbor.area != null ? `${formatNumber(neighbor.area, 0)} m²` : "—"}</td>
+                            <td className="px-3 py-2">{neighbor.hasUndividedOwnership ? "Εξ αδιαιρέτου" : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
