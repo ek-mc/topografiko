@@ -100,7 +100,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showTerms, setShowTerms] = useState(true);
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
-  const [showElevations, setShowElevations] = useState(true);
+  const [showElevations, setShowElevations] = useState(false);
   const [elevationsLoading, setElevationsLoading] = useState(false);
   const [elevationRows, setElevationRows] = useState<ElevationRow[]>([]);
 
@@ -137,7 +137,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setContextLoading(false);
       setParcel(null);
       setElevationRows([]);
-      setShowElevations(true);
+      setShowElevations(false);
       setTeeData(null);
       setTeeCandidates([]);
       setBuildingTerms(null);
@@ -411,7 +411,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           buildingTerms: showTerms ? buildingTerms : null,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
-          vertexElevations: elevationRows.length ? elevationRows.map((r) => ({ label: r.label, z: r.z })) : undefined,
         }),
         "application/dxf",
         false,
@@ -491,15 +490,11 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 <button
                   type="button"
                   onClick={toggleElevations}
-                  disabled={elevationsLoading}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
-                    showElevations
-                      ? "border-blue-300 bg-blue-500/10 text-blue-700 dark:border-blue-400/40 dark:bg-blue-400/15 dark:text-blue-200"
-                      : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  } ${elevationsLoading ? "opacity-70" : ""}`}
+                  disabled
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-muted-foreground opacity-60"
                 >
                   <Mountain className="h-3.5 w-3.5" />
-                  {elevationsLoading ? "Elevation…" : "Elevation"}
+                  Elevation
                 </button>
               </div>
 
