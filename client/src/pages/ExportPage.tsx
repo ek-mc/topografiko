@@ -290,15 +290,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     return `${coords.map((row) => row.label).join("")}${coords[0].label}`;
   }, [coords]);
 
-  const landUseNote = useMemo(() => {
-    if (!parcel) return "—";
-    const info = (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[parcel.mainUse];
-    const text = `${info?.category || ""} ${info?.subcategory || ""} ${parcel.description || ""}`.toUpperCase();
-    if (text.includes("ΚΟΙΝΟΧΡΗΣ")) return "ΚΧ (Κοινόχρηστο)";
-    if (text.includes("ΚΟΙΝΩΦΕΛ")) return "ΚΦ (Κοινωφελές)";
-    return "Δεν προκύπτει ΚΧ/ΚΦ";
-  }, [parcel]);
-
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
 
@@ -331,7 +322,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           buildingTerms: showTerms ? buildingTerms : null,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
-          landUseNote,
         }),
         "application/dxf",
         false,
@@ -634,8 +624,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div>{parcel.area?.toFixed(2) || "—"} m²</div>
                         <div className="text-muted-foreground">Περίμετρος</div>
                         <div>{parcel.perimeter?.toFixed(2) || "—"} m</div>
-                        <div className="text-muted-foreground">Ένδειξη ΚΧ/ΚΦ</div>
-                        <div>{landUseNote}</div>
                       </div>
                     </Panel>
                   ) : null}

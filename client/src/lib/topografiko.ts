@@ -1037,7 +1037,6 @@ export function toDXF(
     buildingTerms?: BuildingTermsData | null;
     urbanLines?: Point[][];
     buildingLines?: Point[][];
-    landUseNote?: string;
   },
 ) {
   const writer = new DxfWriter();
@@ -1211,6 +1210,18 @@ export function toDXF(
         addMaskedSheetLine(start, end, { layerName: "OT_CONTEXT", colorNumber: 7 });
       });
     });
+    const labelPoint = toSheet(centroidOfRing(ot.rings[0] || []));
+    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
+      const text = `Ο.Τ. ${ot.otNumber}`;
+      const textHeight = mm(1.35);
+      const halfWidth = estimateTextWidth(text, textHeight) / 2 + mm(1.8);
+      const halfHeight = mm(2.6);
+      addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { x: labelPoint.x + halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addDxfLine(writer, { x: labelPoint.x + halfWidth, y: labelPoint.y - halfHeight }, { x: labelPoint.x + halfWidth, y: labelPoint.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addDxfLine(writer, { x: labelPoint.x + halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
+    }
   });
 
   projectedUrbanLines.forEach((path) => {
@@ -1297,49 +1308,15 @@ export function toDXF(
     });
   });
 
-  const drawOtLabelBox = (label: string, sourceRing: Point[]) => {
-    const ringPoints = stripClosingPoint(sourceRing).map(toSheet);
-    if (!ringPoints.length) return;
-    const ringBounds = boundsFromPoints(ringPoints);
-    const textHeight = mm(1.55);
-    const paddingX = mm(2.2);
-    const paddingY = mm(1.6);
-    const boxWidth = estimateTextWidth(label, textHeight) + paddingX * 2;
-    const boxHeight = textHeight + paddingY * 2;
-    const halfWidth = boxWidth / 2;
-    const halfHeight = boxHeight / 2;
-
-    const margin = mm(1.8);
-    const minX = Math.max(drawWin.x0 + halfWidth + 0.8, ringBounds.minX + halfWidth + margin);
-    const maxX = Math.min(drawWin.x1 - halfWidth - 0.8, ringBounds.maxX - halfWidth - margin);
-    const minY = Math.max(drawWin.y0 + halfHeight + 0.8, ringBounds.minY + halfHeight + margin);
-    const maxY = Math.min(drawWin.y1 - halfHeight - 0.8, ringBounds.maxY - halfHeight - margin);
-
-    let x = (ringBounds.minX + ringBounds.maxX) / 2;
-    let y = ringBounds.maxY - halfHeight - margin;
-
-    if (minX <= maxX) x = Math.max(minX, Math.min(maxX, x));
-    else x = Math.max(drawWin.x0 + halfWidth + 0.8, Math.min(drawWin.x1 - halfWidth - 0.8, x));
-
-    if (minY <= maxY) y = Math.max(minY, Math.min(maxY, y));
-    else y = Math.max(drawWin.y0 + halfHeight + 0.8, Math.min(drawWin.y1 - halfHeight - 0.8, y));
-
-    if (pointInRect({ x, y }, legendMaskRect)) {
-      y = Math.max(drawWin.y0 + halfHeight + 0.8, legendMaskRect.minY - halfHeight - mm(1.4));
-    }
-
-    addDxfLine(writer, { x: x - halfWidth, y: y - halfHeight }, { x: x + halfWidth, y: y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: x + halfWidth, y: y - halfHeight }, { x: x + halfWidth, y: y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: x + halfWidth, y: y + halfHeight }, { x: x - halfWidth, y: y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: x - halfWidth, y: y + halfHeight }, { x: x - halfWidth, y: y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addCenteredDxfText(writer, x, y - textHeight * 0.33, textHeight, label, { layerName: "ANNOTATION", colorNumber: 7 });
-  };
-
-  projectedContextOts.forEach((ot) => {
-    if (ot.otNumber && ot.rings[0]?.length) drawOtLabelBox(`Ο.Τ. ${ot.otNumber}`, ot.rings[0]);
-  });
-  if (meta?.ot && projectedOtRings[0]?.length) {
-    drawOtLabelBox(`Ο.Τ. ${meta.ot}`, projectedOtRings[0]);
+  if (projectedOtRings[0]?.length) {
+    const otCenter = toSheet(centroidOfRing(projectedOtRings[0]));
+    const halfWidth = mm(11.5);
+    const halfHeight = mm(4.8);
+    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addCenteredDxfText(writer, otCenter.x, otCenter.y - mm(0.9), mm(1.9), `Ο.Τ. ${meta?.ot || "-"}`, { layerName: "ANNOTATION", colorNumber: 7 });
   }
 
   const northX = drawWin.x0 + mm(16);
@@ -1396,7 +1373,6 @@ export function toDXF(
       ["Θέση", `Ο.Τ. ${meta?.ot || "-"}, Δήμος ${meta?.municipality || "-"}`],
       ...(meta?.region ? [["Οδοί", meta.region]] as const : []),
       ["KAEK", meta?.kaek || "-"],
-      ...(meta?.landUseNote ? [["Ένδειξη ΚΧ/ΚΦ", meta.landUseNote]] as const : []),
       ["Κλίμακα", `1:${scaleDenominator}`],
       ["Ημερομηνία", dateText],
       ["Σύστημα αναφοράς", "ΕΓΣΑ '87"],
