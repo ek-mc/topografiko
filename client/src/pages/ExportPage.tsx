@@ -743,7 +743,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         {`ΕΜΒΑΔΟΝ ΟΙΚΟΠΕΔΟΥ (${coordinateLoopLabel || "-"}): Ε=${parcel.area?.toFixed(2) || "-"} Τ.Μ.`}
                       </div>
                       {showElevations ? (
-                        <div className="text-[11px] text-muted-foreground">Τα υψόμετρα προβάλλονται ενδεικτικά από DEM (Open-Meteo elevation API).</div>
+                        <div className="text-[11px] text-muted-foreground">Τα υψόμετρα προβάλλονται ενδεικτικά από elevation service.</div>
                       ) : null}
                     </Panel>
                   ) : null}
