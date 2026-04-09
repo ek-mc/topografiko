@@ -1311,7 +1311,7 @@ export function toDXF(
     const dotA = normalA.x * toCenter.x + normalA.y * toCenter.y;
     const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
     const inward = dotA >= dotB ? normalA : normalB;
-    const mid = { x: midpoint.x + inward.x * mm(4.2), y: midpoint.y + inward.y * mm(4.2) };
+    const mid = { x: midpoint.x + inward.x * mm(5.4), y: midpoint.y + inward.y * mm(5.4) };
     const radialLength = Math.max(Math.hypot(vertex.x - parcelCenter.x, vertex.y - parcelCenter.y), 1e-9);
     const vertexLabelPoint = {
       x: vertex.x + ((vertex.x - parcelCenter.x) / radialLength) * mm(2.2),
@@ -1349,8 +1349,8 @@ export function toDXF(
     if (!ringWorld.length) return;
 
     const textHeight = mm(1.55);
-    const padX = mm(2.2);
-    const padY = mm(1.6);
+    const padX = mm(3.6);
+    const padY = mm(2.4);
     const boxWidth = estimateTextWidth(text, textHeight) + padX * 2;
     const boxHeight = textHeight + padY * 2;
     const halfW = boxWidth / 2;
@@ -1424,7 +1424,7 @@ export function toDXF(
     addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addDxfLine(writer, { x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addCenteredDxfText(writer, x, y - textHeight * 0.34, textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
+    addCenteredDxfText(writer, x, y - textHeight * 0.30, textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
   };
 
   projectedContextOts.forEach((ot) => {
