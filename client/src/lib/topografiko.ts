@@ -1208,11 +1208,6 @@ export function toDXF(
     const otKey = `${ot.otNumber}-${otIndex}`;
     ot.rings.forEach((ring) => {
       const worldPts = stripClosingPoint(ring);
-      const hasVisibleVertex = worldPts.some((point) => {
-        const s = toSheet(point);
-        return s.x >= drawWin.x0 && s.x <= drawWin.x1 && s.y >= drawWin.y0 && s.y <= drawWin.y1;
-      });
-      if (hasVisibleVertex) visibleContextOtKeys.add(otKey);
       worldPts.forEach((start, index) => {
         const end = worldPts[(index + 1) % worldPts.length];
         const overlapsUrban = projectedUrbanLines.some((urbanPath) => {
@@ -1224,7 +1219,8 @@ export function toDXF(
           });
         });
         if (overlapsUrban) return;
-        addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+        const drawn = addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+        if (drawn) visibleContextOtKeys.add(otKey);
       });
     });
   });
@@ -1489,11 +1485,6 @@ export function toDXF(
   let mainOtVisible = false;
   projectedOtRings.forEach((ring) => {
     const worldPts = stripClosingPoint(ring);
-    const hasVisibleVertex = worldPts.some((point) => {
-      const s = toSheet(point);
-      return s.x >= drawWin.x0 && s.x <= drawWin.x1 && s.y >= drawWin.y0 && s.y <= drawWin.y1;
-    });
-    if (hasVisibleVertex) mainOtVisible = true;
     worldPts.forEach((start, index) => {
       const end = worldPts[(index + 1) % worldPts.length];
       const overlapsUrban = projectedUrbanLines.some((urbanPath) => {
@@ -1505,7 +1496,8 @@ export function toDXF(
         });
       });
       if (overlapsUrban) return;
-      addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+      const drawn = addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+      if (drawn) mainOtVisible = true;
     });
   });
 
