@@ -1297,11 +1297,6 @@ export function toDXF(
 
   const parcelSheetPoints = mainParcelPoints.map(toSheet);
   const parcelCenter = centroidOfRing(parcelSheetPoints);
-  const placedEdgeLabelPoints: Point[] = [];
-  const parcelSegments = parcelSheetPoints.map((point, idx) => ({
-    start: point,
-    end: parcelSheetPoints[(idx + 1) % parcelSheetPoints.length],
-  }));
 
   buildParcelEdgeLabels(mainParcelPoints).forEach((edge, index) => {
     const start = parcelSheetPoints[index];
@@ -1329,45 +1324,16 @@ export function toDXF(
       inward = dotA >= dotB ? normalA : normalB;
     }
 
-    const baseOffset = mm(1.35);
-    const tCandidates = [0.5, 0.4, 0.6, 0.3, 0.7];
-
-    const scoreCandidate = (candidate: Point) => {
-      if (!pointInRing(candidate, parcelSheetPoints)) return Number.NEGATIVE_INFINITY;
-      const ownEdgeDistance = distancePointToSegment(candidate, start, end);
-      if (ownEdgeDistance < mm(0.95)) return Number.NEGATIVE_INFINITY;
-
-      let minEdgeDistance = Number.POSITIVE_INFINITY;
-      parcelSegments.forEach((seg, segIndex) => {
-        if (segIndex === index) return;
-        minEdgeDistance = Math.min(minEdgeDistance, distancePointToSegment(candidate, seg.start, seg.end));
-      });
-      const nearestPlaced = placedEdgeLabelPoints.length
-        ? Math.min(...placedEdgeLabelPoints.map((p) => Math.hypot(candidate.x - p.x, candidate.y - p.y)))
-        : 999;
-      return minEdgeDistance + Math.min(nearestPlaced, mm(3.2)) * 0.35;
-    };
-
-    let bestMid = {
+    const baseOffset = mm(1.25);
+    let labelPoint = {
       x: centerAnchor.x + inward.x * baseOffset,
       y: centerAnchor.y + inward.y * baseOffset,
     };
-    let bestScore = scoreCandidate(bestMid);
 
-    tCandidates.forEach((t) => {
-      const anchor = { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
-      const candidate = { x: anchor.x + inward.x * baseOffset, y: anchor.y + inward.y * baseOffset };
-      const score = scoreCandidate(candidate);
-      if (score > bestScore) {
-        bestScore = score;
-        bestMid = candidate;
-      }
-    });
-
-    if (!Number.isFinite(bestScore) || bestScore === Number.NEGATIVE_INFINITY) {
-      bestMid = {
-        x: centerAnchor.x + inward.x * mm(1.15),
-        y: centerAnchor.y + inward.y * mm(1.15),
+    if (!pointInRing(labelPoint, parcelSheetPoints) || distancePointToSegment(labelPoint, start, end) < mm(0.9)) {
+      labelPoint = {
+        x: centerAnchor.x + inward.x * mm(1.45),
+        y: centerAnchor.y + inward.y * mm(1.45),
       };
     }
 
@@ -1378,12 +1344,11 @@ export function toDXF(
     };
     addDxfCircle(writer, vertex, mm(0.5), { layerName: "PARCEL_LABELS", colorNumber: 7 });
     addCenteredDxfText(writer, vertexLabelPoint.x, vertexLabelPoint.y, mm(1.45), edge.vertexLabel, { layerName: "PARCEL_LABELS", colorNumber: 7 });
-    addCenteredDxfText(writer, bestMid.x, bestMid.y, mm(1.28), `${edge.edgeLabel}=${formatLengthMeters(edge.length)}`, {
+    addCenteredDxfText(writer, labelPoint.x, labelPoint.y, mm(1.28), `${edge.edgeLabel}=${formatLengthMeters(edge.length)}`, {
       rotation: edgeAngleDegrees(start, end),
       layerName: "PARCEL_LABELS",
       colorNumber: 7,
     });
-    placedEdgeLabelPoints.push(bestMid);
   });
 
   const labelObstacleSegments: Array<{ start: Point; end: Point }> = [];
