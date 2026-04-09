@@ -1204,10 +1204,19 @@ export function toDXF(
 
   projectedContextOts.forEach((ot) => {
     ot.rings.forEach((ring) => {
-      const pts = stripClosingPoint(ring).map(toSheet);
-      pts.forEach((start, index) => {
-        const end = pts[(index + 1) % pts.length];
-        addMaskedSheetLine(start, end, { layerName: "OT_CONTEXT", colorNumber: 7 });
+      const worldPts = stripClosingPoint(ring);
+      worldPts.forEach((start, index) => {
+        const end = worldPts[(index + 1) % worldPts.length];
+        const overlapsUrban = projectedUrbanLines.some((urbanPath) => {
+          const urbanPts = stripClosingPoint(urbanPath);
+          return urbanPts.some((urbanStart, urbanIndex) => {
+            if (urbanIndex === urbanPts.length - 1) return false;
+            const urbanEnd = urbanPts[urbanIndex + 1];
+            return segmentDistance(start, end, urbanStart, urbanEnd) <= 0.35;
+          });
+        });
+        if (overlapsUrban) return;
+        addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
       });
     });
     const labelPoint = toSheet(centroidOfRing(ot.rings[0] || []));
@@ -1259,12 +1268,11 @@ export function toDXF(
   projectedBuildingLines.forEach((path) => {
     const pts = stripClosingPoint(path);
     if (pts.length < 2) return;
-    pts.slice(0, -1).forEach((start, index) => {
-      const end = pts[index + 1];
-      if (hasUrbanOverlap({ start, end })) return;
-      const startSheet = toSheet(start);
-      const endSheet = toSheet(end);
-      addMaskedSheetLine(startSheet, endSheet, { layerName: "BUILDING_LINE", colorNumber: 1 });
+    const sheetPoints = pts.map(toSheet);
+    sheetPoints.forEach((start, index) => {
+      if (index === sheetPoints.length - 1) return;
+      const end = sheetPoints[index + 1];
+      addMaskedSheetLine(start, end, { layerName: "BUILDING_LINE", colorNumber: 1 });
     });
   });
 
@@ -1364,11 +1372,19 @@ export function toDXF(
   addDxfText(writer, legendX + mm(32), legendY + legendHeight - mm(29), mm(1.65), "όρια όμορων οικοπέδων", { layerName: "ANNOTATION" });
 
   projectedOtRings.forEach((ring) => {
-    const pts = stripClosingPoint(ring).map(toSheet);
-    pts.forEach((start, index) => {
-      const end = pts[(index + 1) % pts.length];
-        addMaskedSheetLine(start, end, { layerName: "OT_CONTEXT", colorNumber: 7 });
-
+    const worldPts = stripClosingPoint(ring);
+    worldPts.forEach((start, index) => {
+      const end = worldPts[(index + 1) % worldPts.length];
+      const overlapsUrban = projectedUrbanLines.some((urbanPath) => {
+        const urbanPts = stripClosingPoint(urbanPath);
+        return urbanPts.some((urbanStart, urbanIndex) => {
+          if (urbanIndex === urbanPts.length - 1) return false;
+          const urbanEnd = urbanPts[urbanIndex + 1];
+          return segmentDistance(start, end, urbanStart, urbanEnd) <= 0.35;
+        });
+      });
+      if (overlapsUrban) return;
+      addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
     });
   });
 
