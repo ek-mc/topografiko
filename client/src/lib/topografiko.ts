@@ -1345,30 +1345,35 @@ export function toDXF(
   projectedOtRings.forEach((ring) => addObstaclePath(ring, true));
 
   const drawOtBoxLabel = (text: string, sourceRing: Point[]) => {
-    const ringSheet = stripClosingPoint(sourceRing).map(toSheet);
-    if (!ringSheet.length) return;
+    const ringWorld = stripClosingPoint(sourceRing);
+    if (!ringWorld.length) return;
 
-    const ringBounds = boundsFromPoints(ringSheet);
     const textHeight = mm(1.55);
-    const padX = mm(2.0);
+    const padX = mm(2.2);
     const padY = mm(1.6);
     const boxWidth = estimateTextWidth(text, textHeight) + padX * 2;
     const boxHeight = textHeight + padY * 2;
     const halfW = boxWidth / 2;
     const halfH = boxHeight / 2;
 
-    const cx = (ringBounds.minX + ringBounds.maxX) / 2;
-    const cy = (ringBounds.minY + ringBounds.maxY) / 2;
-    const candidates = [
-      { x: cx, y: cy },
-      { x: cx, y: ringBounds.maxY - halfH - mm(1.2) },
-      { x: cx, y: ringBounds.minY + halfH + mm(1.2) },
-      { x: ringBounds.minX + halfW + mm(1.2), y: cy },
-      { x: ringBounds.maxX - halfW - mm(1.2), y: cy },
-    ].map((p) => ({
-      x: Math.max(drawWin.x0 + halfW + 0.5, Math.min(drawWin.x1 - halfW - 0.5, p.x)),
-      y: Math.max(drawWin.y0 + halfH + 0.5, Math.min(drawWin.y1 - halfH - 0.5, p.y)),
-    }));
+    const worldBounds = boundsFromPoints(ringWorld);
+    const worldCenter = centroidOfRing(ringWorld);
+    const bboxCenter = { x: (worldBounds.minX + worldBounds.maxX) / 2, y: (worldBounds.minY + worldBounds.maxY) / 2 };
+    const edgeMidpoints = ringWorld.map((point, index) => {
+      const next = ringWorld[(index + 1) % ringWorld.length];
+      return { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 };
+    });
+
+    const worldCandidates = [worldCenter, bboxCenter, ...edgeMidpoints]
+      .filter((point) => pointInRing(point, ringWorld));
+
+    const candidates = (worldCandidates.length ? worldCandidates : [worldCenter]).map((point) => {
+      const p = toSheet(point);
+      return {
+        x: Math.max(drawWin.x0 + halfW + 0.5, Math.min(drawWin.x1 - halfW - 0.5, p.x)),
+        y: Math.max(drawWin.y0 + halfH + 0.5, Math.min(drawWin.y1 - halfH - 0.5, p.y)),
+      };
+    });
 
     const rectFor = (p: { x: number; y: number }) => ({
       minX: p.x - halfW,
@@ -1387,7 +1392,9 @@ export function toDXF(
       labelObstacleSegments.forEach((seg) => {
         if (clipSegmentToRect(seg.start, seg.end, rect)) hits += 1;
       });
-      return hits;
+      const centerSheet = toSheet(worldCenter);
+      const distancePenalty = Math.hypot(p.x - centerSheet.x, p.y - centerSheet.y) / 20;
+      return hits * 10 + distancePenalty;
     };
 
     let best = candidates[0];
@@ -1406,7 +1413,7 @@ export function toDXF(
     addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addDxfLine(writer, { x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addCenteredDxfText(writer, x, y - textHeight * 0.33, textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
+    addCenteredDxfText(writer, x, y - textHeight * 0.34, textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
   };
 
   projectedContextOts.forEach((ot) => {
