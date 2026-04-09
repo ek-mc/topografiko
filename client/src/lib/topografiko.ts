@@ -1203,7 +1203,9 @@ export function toDXF(
     addDxfText(writer, drawWin.x0 - mm(9.4), sy - mm(0.55), gridLabelHeight, String(Math.round(worldY)), { layerName: "ANNOTATION" });
   }
 
-  projectedContextOts.forEach((ot) => {
+  const visibleContextOtKeys = new Set<string>();
+  projectedContextOts.forEach((ot, otIndex) => {
+    const otKey = `${ot.otNumber}-${otIndex}`;
     ot.rings.forEach((ring) => {
       const worldPts = stripClosingPoint(ring);
       worldPts.forEach((start, index) => {
@@ -1217,7 +1219,8 @@ export function toDXF(
           });
         });
         if (overlapsUrban) return;
-        addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+        const drawn = addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+        if (drawn) visibleContextOtKeys.add(otKey);
       });
     });
   });
@@ -1439,10 +1442,32 @@ export function toDXF(
     addCenteredDxfText(writer, x, y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
   };
 
-  projectedContextOts.forEach((ot) => {
-    if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0]);
+  let mainOtVisible = false;
+  projectedOtRings.forEach((ring) => {
+    const worldPts = stripClosingPoint(ring);
+    worldPts.forEach((start, index) => {
+      const end = worldPts[(index + 1) % worldPts.length];
+      const overlapsUrban = projectedUrbanLines.some((urbanPath) => {
+        const urbanPts = stripClosingPoint(urbanPath);
+        return urbanPts.some((urbanStart, urbanIndex) => {
+          if (urbanIndex === urbanPts.length - 1) return false;
+          const urbanEnd = urbanPts[urbanIndex + 1];
+          return segmentDistance(start, end, urbanStart, urbanEnd) <= 0.35;
+        });
+      });
+      if (overlapsUrban) return;
+      const drawn = addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
+      if (drawn) mainOtVisible = true;
+    });
   });
-  if (meta?.ot && projectedOtRings[0]?.length) {
+
+  projectedContextOts.forEach((ot, otIndex) => {
+    const otKey = `${ot.otNumber}-${otIndex}`;
+    if (visibleContextOtKeys.has(otKey) && ot.otNumber && ot.rings[0]?.length) {
+      drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0]);
+    }
+  });
+  if (mainOtVisible && meta?.ot && projectedOtRings[0]?.length) {
     drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, projectedOtRings[0]);
   }
 
@@ -1467,23 +1492,6 @@ export function toDXF(
   addDxfText(writer, legendX + mm(32), legendY + legendHeight - mm(23), mm(1.65), "όριο οικοπέδου", { layerName: "ANNOTATION" });
   addDxfLine(writer, { x: legendX + mm(4), y: legendY + legendHeight - mm(28) }, { x: legendX + mm(26), y: legendY + legendHeight - mm(28) }, { layerName: "PARCEL_ADJ", lineType: "PARCEL_DASH", lineTypeScale: mm(0.6), colorNumber: 8 });
   addDxfText(writer, legendX + mm(32), legendY + legendHeight - mm(29), mm(1.65), "όρια όμορων οικοπέδων", { layerName: "ANNOTATION" });
-
-  projectedOtRings.forEach((ring) => {
-    const worldPts = stripClosingPoint(ring);
-    worldPts.forEach((start, index) => {
-      const end = worldPts[(index + 1) % worldPts.length];
-      const overlapsUrban = projectedUrbanLines.some((urbanPath) => {
-        const urbanPts = stripClosingPoint(urbanPath);
-        return urbanPts.some((urbanStart, urbanIndex) => {
-          if (urbanIndex === urbanPts.length - 1) return false;
-          const urbanEnd = urbanPts[urbanIndex + 1];
-          return segmentDistance(start, end, urbanStart, urbanEnd) <= 0.35;
-        });
-      });
-      if (overlapsUrban) return;
-      addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
-    });
-  });
 
   if (includeTitleBlock) {
     const x0 = drawWin.x1 + paperConfig.gutter;
