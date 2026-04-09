@@ -1319,10 +1319,8 @@ export function toDXF(
     const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
     const inward = dotA >= dotB ? normalA : normalB;
 
-    const edgeAngleRad = Math.atan2(dy, dx);
-    const verticalBoost = Math.abs(Math.sin(edgeAngleRad)) * mm(0.55);
-    const baseOffset = mm(1.85) + verticalBoost;
-    const tCandidates = [0.5, 0.4, 0.6];
+    const baseOffset = mm(1.55);
+    const tCandidates = [0.5, 0.35, 0.65, 0.25, 0.75];
 
     const scoreCandidate = (candidate: Point) => {
       let minEdgeDistance = Number.POSITIVE_INFINITY;
