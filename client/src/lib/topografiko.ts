@@ -1314,15 +1314,29 @@ export function toDXF(
     const normalB = { x: -dy / length, y: dx / length };
 
     const centerAnchor = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-    const toCenter = { x: parcelCenter.x - centerAnchor.x, y: parcelCenter.y - centerAnchor.y };
-    const dotA = normalA.x * toCenter.x + normalA.y * toCenter.y;
-    const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
-    const inward = dotA >= dotB ? normalA : normalB;
+    const probe = mm(0.9);
+    const probeA = { x: centerAnchor.x + normalA.x * probe, y: centerAnchor.y + normalA.y * probe };
+    const probeB = { x: centerAnchor.x + normalB.x * probe, y: centerAnchor.y + normalB.y * probe };
+    let inward = normalA;
+    if (pointInRing(probeA, parcelSheetPoints) && !pointInRing(probeB, parcelSheetPoints)) {
+      inward = normalA;
+    } else if (pointInRing(probeB, parcelSheetPoints) && !pointInRing(probeA, parcelSheetPoints)) {
+      inward = normalB;
+    } else {
+      const toCenter = { x: parcelCenter.x - centerAnchor.x, y: parcelCenter.y - centerAnchor.y };
+      const dotA = normalA.x * toCenter.x + normalA.y * toCenter.y;
+      const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
+      inward = dotA >= dotB ? normalA : normalB;
+    }
 
-    const baseOffset = mm(1.55);
-    const tCandidates = [0.5, 0.35, 0.65, 0.25, 0.75];
+    const baseOffset = mm(1.35);
+    const tCandidates = [0.5, 0.4, 0.6, 0.3, 0.7];
 
     const scoreCandidate = (candidate: Point) => {
+      if (!pointInRing(candidate, parcelSheetPoints)) return Number.NEGATIVE_INFINITY;
+      const ownEdgeDistance = distancePointToSegment(candidate, start, end);
+      if (ownEdgeDistance < mm(0.95)) return Number.NEGATIVE_INFINITY;
+
       let minEdgeDistance = Number.POSITIVE_INFINITY;
       parcelSegments.forEach((seg, segIndex) => {
         if (segIndex === index) return;
@@ -1349,6 +1363,13 @@ export function toDXF(
         bestMid = candidate;
       }
     });
+
+    if (!Number.isFinite(bestScore) || bestScore === Number.NEGATIVE_INFINITY) {
+      bestMid = {
+        x: centerAnchor.x + inward.x * mm(1.15),
+        y: centerAnchor.y + inward.y * mm(1.15),
+      };
+    }
 
     const radialLength = Math.max(Math.hypot(vertex.x - parcelCenter.x, vertex.y - parcelCenter.y), 1e-9);
     const vertexLabelPoint = {
