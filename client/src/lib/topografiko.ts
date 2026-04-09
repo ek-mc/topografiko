@@ -1224,6 +1224,27 @@ export function toDXF(
     }
   });
 
+  const urbanSegments = projectedUrbanLines.flatMap((path) => {
+    const pts = stripClosingPoint(path);
+    if (pts.length < 2) return [] as Array<{ start: Point; end: Point }>;
+    return pts.slice(0, -1).map((start, index) => ({ start, end: pts[index + 1] }));
+  });
+
+  const segmentAngleDeg = (a: Point, b: Point) => {
+    const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+    return ((angle % 180) + 180) % 180;
+  };
+
+  const hasUrbanOverlap = (segment: { start: Point; end: Point }) => {
+    const angleA = segmentAngleDeg(segment.start, segment.end);
+    return urbanSegments.some((urban) => {
+      const angleB = segmentAngleDeg(urban.start, urban.end);
+      const angleDiff = Math.min(Math.abs(angleA - angleB), 180 - Math.abs(angleA - angleB));
+      if (angleDiff > 10) return false;
+      return segmentDistance(segment.start, segment.end, urban.start, urban.end) <= 0.35;
+    });
+  };
+
   projectedUrbanLines.forEach((path) => {
     const pts = stripClosingPoint(path);
     if (pts.length < 2) return;
@@ -1238,11 +1259,12 @@ export function toDXF(
   projectedBuildingLines.forEach((path) => {
     const pts = stripClosingPoint(path);
     if (pts.length < 2) return;
-    const sheetPoints = pts.map(toSheet);
-    sheetPoints.forEach((start, index) => {
-      if (index === sheetPoints.length - 1) return;
-      const end = sheetPoints[index + 1];
-      addMaskedSheetLine(start, end, { layerName: "BUILDING_LINE", colorNumber: 1 });
+    pts.slice(0, -1).forEach((start, index) => {
+      const end = pts[index + 1];
+      if (hasUrbanOverlap({ start, end })) return;
+      const startSheet = toSheet(start);
+      const endSheet = toSheet(end);
+      addMaskedSheetLine(startSheet, endSheet, { layerName: "BUILDING_LINE", colorNumber: 1 });
     });
   });
 
