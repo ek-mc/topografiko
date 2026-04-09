@@ -1219,18 +1219,6 @@ export function toDXF(
         addMaskedSheetLine(toSheet(start), toSheet(end), { layerName: "OT_CONTEXT", colorNumber: 7 });
       });
     });
-    const labelPoint = toSheet(centroidOfRing(ot.rings[0] || []));
-    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
-      const text = `Ο.Τ. ${ot.otNumber}`;
-      const textHeight = mm(1.35);
-      const halfWidth = estimateTextWidth(text, textHeight) / 2 + mm(1.8);
-      const halfHeight = mm(2.6);
-      addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { x: labelPoint.x + halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-      addDxfLine(writer, { x: labelPoint.x + halfWidth, y: labelPoint.y - halfHeight }, { x: labelPoint.x + halfWidth, y: labelPoint.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-      addDxfLine(writer, { x: labelPoint.x + halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-      addDxfLine(writer, { x: labelPoint.x - halfWidth, y: labelPoint.y + halfHeight }, { x: labelPoint.x - halfWidth, y: labelPoint.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
-    }
   });
 
   const urbanSegments = projectedUrbanLines.flatMap((path) => {
@@ -1338,15 +1326,94 @@ export function toDXF(
     });
   });
 
-  if (projectedOtRings[0]?.length) {
-    const otCenter = toSheet(centroidOfRing(projectedOtRings[0]));
-    const halfWidth = mm(11.5);
-    const halfHeight = mm(4.8);
-    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y - halfHeight }, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: otCenter.x + halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: otCenter.x - halfWidth, y: otCenter.y + halfHeight }, { x: otCenter.x - halfWidth, y: otCenter.y - halfHeight }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addCenteredDxfText(writer, otCenter.x, otCenter.y - mm(0.9), mm(1.9), `Ο.Τ. ${meta?.ot || "-"}`, { layerName: "ANNOTATION", colorNumber: 7 });
+  const labelObstacleSegments: Array<{ start: Point; end: Point }> = [];
+  const addObstaclePath = (path: Point[], closed = false) => {
+    const pts = stripClosingPoint(path);
+    if (pts.length < 2) return;
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      labelObstacleSegments.push({ start: toSheet(pts[i]), end: toSheet(pts[i + 1]) });
+    }
+    if (closed) {
+      labelObstacleSegments.push({ start: toSheet(pts[pts.length - 1]), end: toSheet(pts[0]) });
+    }
+  };
+
+  projectedUrbanLines.forEach((path) => addObstaclePath(path, false));
+  projectedBuildingLines.forEach((path) => addObstaclePath(path, false));
+  projectedParcels.forEach((parcel) => parcel.rings.forEach((ring) => addObstaclePath(ring, true)));
+  projectedContextOts.forEach((ot) => ot.rings.forEach((ring) => addObstaclePath(ring, true)));
+  projectedOtRings.forEach((ring) => addObstaclePath(ring, true));
+
+  const drawOtBoxLabel = (text: string, sourceRing: Point[]) => {
+    const ringSheet = stripClosingPoint(sourceRing).map(toSheet);
+    if (!ringSheet.length) return;
+
+    const ringBounds = boundsFromPoints(ringSheet);
+    const textHeight = mm(1.55);
+    const padX = mm(2.0);
+    const padY = mm(1.6);
+    const boxWidth = estimateTextWidth(text, textHeight) + padX * 2;
+    const boxHeight = textHeight + padY * 2;
+    const halfW = boxWidth / 2;
+    const halfH = boxHeight / 2;
+
+    const cx = (ringBounds.minX + ringBounds.maxX) / 2;
+    const cy = (ringBounds.minY + ringBounds.maxY) / 2;
+    const candidates = [
+      { x: cx, y: cy },
+      { x: cx, y: ringBounds.maxY - halfH - mm(1.2) },
+      { x: cx, y: ringBounds.minY + halfH + mm(1.2) },
+      { x: ringBounds.minX + halfW + mm(1.2), y: cy },
+      { x: ringBounds.maxX - halfW - mm(1.2), y: cy },
+    ].map((p) => ({
+      x: Math.max(drawWin.x0 + halfW + 0.5, Math.min(drawWin.x1 - halfW - 0.5, p.x)),
+      y: Math.max(drawWin.y0 + halfH + 0.5, Math.min(drawWin.y1 - halfH - 0.5, p.y)),
+    }));
+
+    const rectFor = (p: { x: number; y: number }) => ({
+      minX: p.x - halfW,
+      maxX: p.x + halfW,
+      minY: p.y - halfH,
+      maxY: p.y + halfH,
+    });
+
+    const scoreCandidate = (p: { x: number; y: number }) => {
+      const rect = rectFor(p);
+      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return Number.POSITIVE_INFINITY;
+      if (!(rect.maxX < legendMaskRect.minX || rect.minX > legendMaskRect.maxX || rect.maxY < legendMaskRect.minY || rect.minY > legendMaskRect.maxY)) {
+        return Number.POSITIVE_INFINITY;
+      }
+      let hits = 0;
+      labelObstacleSegments.forEach((seg) => {
+        if (clipSegmentToRect(seg.start, seg.end, rect)) hits += 1;
+      });
+      return hits;
+    };
+
+    let best = candidates[0];
+    let bestScore = scoreCandidate(best);
+    candidates.slice(1).forEach((candidate) => {
+      const score = scoreCandidate(candidate);
+      if (score < bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    });
+
+    const x = best.x;
+    const y = best.y;
+    addDxfLine(writer, { x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addDxfLine(writer, { x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
+    addCenteredDxfText(writer, x, y - textHeight * 0.33, textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
+  };
+
+  projectedContextOts.forEach((ot) => {
+    if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0]);
+  });
+  if (meta?.ot && projectedOtRings[0]?.length) {
+    drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, projectedOtRings[0]);
   }
 
   const northX = drawWin.x0 + mm(16);
