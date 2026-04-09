@@ -294,7 +294,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     if (!parcel) return;
 
     const parcels = exportParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
-    const base = mode === "parcel" ? parcel.kaek : mode === "ot" ? `${parcel.kaek}-ot` : `${parcel.kaek}-full`;
+    const modeLabel = mode === "parcel" ? "parcel" : mode === "ot" ? "ot" : "full";
+    const base = `${parcel.kaek}-${paperSize.toLowerCase()}-1-${scaleDenominator}-${modeLabel}`;
 
     if (format === "geojson") {
       downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
