@@ -1311,7 +1311,7 @@ export function toDXF(
     const dotA = normalA.x * toCenter.x + normalA.y * toCenter.y;
     const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
     const inward = dotA >= dotB ? normalA : normalB;
-    const mid = { x: midpoint.x + inward.x * mm(2.6), y: midpoint.y + inward.y * mm(2.6) };
+    const mid = { x: midpoint.x + inward.x * mm(3.0), y: midpoint.y + inward.y * mm(3.0) };
     const radialLength = Math.max(Math.hypot(vertex.x - parcelCenter.x, vertex.y - parcelCenter.y), 1e-9);
     const vertexLabelPoint = {
       x: vertex.x + ((vertex.x - parcelCenter.x) / radialLength) * mm(2.2),
@@ -1420,11 +1420,10 @@ export function toDXF(
     const bestSheet = toSheet(bestWorld);
     const x = bestSheet.x;
     const y = bestSheet.y;
-    addDxfLine(writer, { x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
-    addDxfLine(writer, { x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addCenteredDxfText(writer, x, y - textHeight * 0.42, textHeight, text, { layerName: "ANNOTATION", colorNumber: 7 });
+    const underlineHalf = estimateTextWidth(text, textHeight) / 2 + mm(0.35);
+    const underlineY = y - textHeight * 0.96;
+    addDxfLine(writer, { x: x - underlineHalf, y: underlineY }, { x: x + underlineHalf, y: underlineY }, { layerName: "OT_CONTEXT", colorNumber: 7 });
   };
 
   projectedContextOts.forEach((ot) => {
