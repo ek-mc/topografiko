@@ -210,6 +210,12 @@ function centroid(points: Point[]) {
   return { x: sum.x / usable.length, y: sum.y / usable.length };
 }
 
+function ownershipLabel(propHor: number | null, propVert: number | null) {
+  if ((propHor ?? 0) > 0) return "Οριζόντια συνιδιοκτησία";
+  if ((propVert ?? 0) > 0) return "Εξ αδιαιρέτου συνιδιοκτησία";
+  return "Ακέραια ιδιοκτησία";
+}
+
 async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
   const normalized = kaek.replace(/\s+/g, "").trim();
   const params = new URLSearchParams({
@@ -563,7 +569,7 @@ export default function Home({ initialKaek }: HomeProps) {
     
     rows.push(
       { label: "ΟΤΑ / link", value: parcel.link || "—", source: "Κτηματολόγιο", sourceDetail: "LINK από ArcGIS service" },
-      { label: "Καθεστώς", value: parcel.hasUndividedOwnership ? "Συνιδιοκτησία" : "Ακέραια ιδιοκτησία", source: "Κτηματολόγιο", sourceDetail: "Σύνθεση από PROP_VERT/PROP_HOR" },
+      { label: "Καθεστώς", value: ownershipLabel(parcel.propHor, parcel.propVert), source: "Κτηματολόγιο", sourceDetail: "Σύνθεση από PROP_VERT/PROP_HOR" },
       { label: "Αριθμός Καθέτων", value: attrs.PROP_VERT != null ? String(attrs.PROP_VERT) : "—", source: "Κτηματολόγιο", sourceDetail: "PROP_VERT από ArcGIS service" },
       { label: "Αριθμός Οριζοντίων", value: attrs.PROP_HOR != null ? String(attrs.PROP_HOR) : "—", source: "Κτηματολόγιο", sourceDetail: "PROP_HOR από ArcGIS service" },
       { label: "Ποσοστό Κύριας Χρήσης", value: attrs.PERCENTAGE != null ? `${attrs.PERCENTAGE}%` : "—", source: "Κτηματολόγιο", sourceDetail: "PERCENTAGE από ArcGIS service" },
@@ -998,7 +1004,7 @@ export default function Home({ initialKaek }: HomeProps) {
                             </td>
                             <td className="px-3 py-2">{((mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[neighbor.mainUse]?.subcategory || (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[neighbor.mainUse]?.category || neighbor.mainUse || "—")}</td>
                             <td className="px-3 py-2">{neighbor.area != null ? `${formatNumber(neighbor.area, 0)} m²` : "—"}</td>
-                            <td className="px-3 py-2">{neighbor.hasUndividedOwnership ? "Συνιδιοκτησία" : "Ακέραια ιδιοκτησία"}</td>
+                            <td className="px-3 py-2">{ownershipLabel(neighbor.propHor, neighbor.propVert)}</td>
                           </tr>
                         ))}
                       </tbody>
