@@ -1300,7 +1300,12 @@ export function toDXF(
 
   const parcelSheetPoints = mainParcelPoints.map(toSheet);
   const parcelCenter = centroidOfRing(parcelSheetPoints);
-  const parcelOrientation = signedArea(parcelSheetPoints) >= 0 ? 1 : -1;
+  const placedEdgeLabelPoints: Point[] = [];
+  const parcelSegments = parcelSheetPoints.map((point, idx) => ({
+    start: point,
+    end: parcelSheetPoints[(idx + 1) % parcelSheetPoints.length],
+  }));
+
   buildParcelEdgeLabels(mainParcelPoints).forEach((edge, index) => {
     const start = parcelSheetPoints[index];
     const end = parcelSheetPoints[(index + 1) % parcelSheetPoints.length];
@@ -1308,14 +1313,48 @@ export function toDXF(
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const length = Math.max(Math.hypot(dx, dy), 1e-9);
-    const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     const normalA = { x: dy / length, y: -dx / length };
     const normalB = { x: -dy / length, y: dx / length };
-    const toCenter = { x: parcelCenter.x - midpoint.x, y: parcelCenter.y - midpoint.y };
+
+    const centerAnchor = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const toCenter = { x: parcelCenter.x - centerAnchor.x, y: parcelCenter.y - centerAnchor.y };
     const dotA = normalA.x * toCenter.x + normalA.y * toCenter.y;
     const dotB = normalB.x * toCenter.x + normalB.y * toCenter.y;
     const inward = dotA >= dotB ? normalA : normalB;
-    const mid = { x: midpoint.x + inward.x * mm(2.0), y: midpoint.y + inward.y * mm(2.0) };
+
+    const edgeAngleRad = Math.atan2(dy, dx);
+    const verticalBoost = Math.abs(Math.sin(edgeAngleRad)) * mm(0.55);
+    const baseOffset = mm(1.85) + verticalBoost;
+    const tCandidates = [0.5, 0.4, 0.6];
+
+    const scoreCandidate = (candidate: Point) => {
+      let minEdgeDistance = Number.POSITIVE_INFINITY;
+      parcelSegments.forEach((seg, segIndex) => {
+        if (segIndex === index) return;
+        minEdgeDistance = Math.min(minEdgeDistance, distancePointToSegment(candidate, seg.start, seg.end));
+      });
+      const nearestPlaced = placedEdgeLabelPoints.length
+        ? Math.min(...placedEdgeLabelPoints.map((p) => Math.hypot(candidate.x - p.x, candidate.y - p.y)))
+        : 999;
+      return minEdgeDistance + Math.min(nearestPlaced, mm(3.2)) * 0.35;
+    };
+
+    let bestMid = {
+      x: centerAnchor.x + inward.x * baseOffset,
+      y: centerAnchor.y + inward.y * baseOffset,
+    };
+    let bestScore = scoreCandidate(bestMid);
+
+    tCandidates.forEach((t) => {
+      const anchor = { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+      const candidate = { x: anchor.x + inward.x * baseOffset, y: anchor.y + inward.y * baseOffset };
+      const score = scoreCandidate(candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMid = candidate;
+      }
+    });
+
     const radialLength = Math.max(Math.hypot(vertex.x - parcelCenter.x, vertex.y - parcelCenter.y), 1e-9);
     const vertexLabelPoint = {
       x: vertex.x + ((vertex.x - parcelCenter.x) / radialLength) * mm(2.2),
@@ -1323,11 +1362,12 @@ export function toDXF(
     };
     addDxfCircle(writer, vertex, mm(0.5), { layerName: "PARCEL_LABELS", colorNumber: 7 });
     addCenteredDxfText(writer, vertexLabelPoint.x, vertexLabelPoint.y, mm(1.45), edge.vertexLabel, { layerName: "PARCEL_LABELS", colorNumber: 7 });
-    addCenteredDxfText(writer, mid.x, mid.y, mm(1.28), `${edge.edgeLabel}=${formatLengthMeters(edge.length)}`, {
+    addCenteredDxfText(writer, bestMid.x, bestMid.y, mm(1.28), `${edge.edgeLabel}=${formatLengthMeters(edge.length)}`, {
       rotation: edgeAngleDegrees(start, end),
       layerName: "PARCEL_LABELS",
       colorNumber: 7,
     });
+    placedEdgeLabelPoints.push(bestMid);
   });
 
   const labelObstacleSegments: Array<{ start: Point; end: Point }> = [];
