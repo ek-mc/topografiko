@@ -979,7 +979,6 @@ export default function Home({ initialKaek }: HomeProps) {
                           <th className="px-3 py-2 text-left font-medium">KAEK</th>
                           <th className="px-3 py-2 text-left font-medium">Χρήση</th>
                           <th className="px-3 py-2 text-left font-medium">Εμβαδόν</th>
-                          <th className="px-3 py-2 text-left font-medium">Καθεστώς</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1004,7 +1003,6 @@ export default function Home({ initialKaek }: HomeProps) {
                             </td>
                             <td className="px-3 py-2">{((mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[neighbor.mainUse]?.subcategory || (mainUseMap as Record<string, { code: string; category: string; subcategory: string }>)[neighbor.mainUse]?.category || neighbor.mainUse || "—")}</td>
                             <td className="px-3 py-2">{neighbor.area != null ? `${formatNumber(neighbor.area, 0)} m²` : "—"}</td>
-                            <td className="px-3 py-2">{ownershipLabel(neighbor.propHor, neighbor.propVert)}</td>
                           </tr>
                         ))}
                       </tbody>
