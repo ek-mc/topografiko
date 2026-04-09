@@ -106,6 +106,20 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
   useEffect(() => {
     if (!initialKaek) return;
+    try {
+      const raw = sessionStorage.getItem(`topografiko:elev:${initialKaek}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.rows) && parsed.rows.length) {
+        setElevationRows(parsed.rows);
+      }
+    } catch {
+      // ignore malformed cache
+    }
+  }, [initialKaek]);
+
+  useEffect(() => {
+    if (!initialKaek) return;
 
     let cancelled = false;
 
@@ -344,6 +358,11 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
       setElevationRows(rows);
       setShowElevations(true);
+      try {
+        sessionStorage.setItem(`topografiko:elev:${parcel.kaek}`, JSON.stringify({ rows, source: "export-on-demand", ts: Date.now() }));
+      } catch {
+        // ignore storage failures
+      }
     } catch (err) {
       console.error("Failed to fetch elevations", err);
       setElevationRows([]);
