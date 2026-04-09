@@ -90,6 +90,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [officialRoadNames, setOfficialRoadNames] = useState<string[]>([]);
   const [urbanLines, setUrbanLines] = useState<Point[][]>([]);
   const [buildingLines, setBuildingLines] = useState<Point[][]>([]);
+  const [pedestrianZones, setPedestrianZones] = useState<Array<{ rings: Point[][]; label?: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [contextLoading, setContextLoading] = useState(false);
   const [mode, setMode] = useState<ExportMode>("full");
@@ -147,6 +148,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setOfficialRoadNames([]);
       setUrbanLines([]);
       setBuildingLines([]);
+      setPedestrianZones([]);
 
       try {
         const result = await fetchParcelByKaek(initialKaek);
@@ -176,10 +178,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
             if (cancelled) return;
             setUrbanLines(lines.urbanLines);
             setBuildingLines(lines.buildingLines);
+            setPedestrianZones(lines.pedestrianZones || []);
           }).catch(() => {
             if (cancelled) return;
             setUrbanLines([]);
             setBuildingLines([]);
+            setPedestrianZones([]);
           });
         }
 
@@ -289,9 +293,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       ...previewParcels,
       ...(includeOtContext && teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
       ...(includeFullContext ? contextOts.map((item) => ({ rings: item.rings })) : []),
+      ...(includeFullContext ? pedestrianZones.map((item) => ({ rings: item.rings })) : []),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, teeData, contextOts, includeOtContext, includeFullContext]);
+  }, [previewParcels, teeData, contextOts, pedestrianZones, includeOtContext, includeFullContext]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
     if (parcel?.officialRingsGgrs87?.[0]?.length) {
@@ -411,6 +416,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           buildingTerms: showTerms ? buildingTerms : null,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
+          pedestrianZones: includeFullContext ? pedestrianZones : undefined,
           vertexElevations: elevationRows.length ? elevationRows.map((r) => ({ label: r.label, z: r.z })) : undefined,
         }),
         "application/dxf",
@@ -610,6 +616,31 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                                 fill={isDark ? "#f8fafc" : "#111827"}
                               >
                                 {label}
+                              </text>
+                            </g>
+                          );
+                        })}
+                        {pedestrianZones.map((zone, idx) => {
+                          const ring = zone.rings[0];
+                          if (!ring?.length) return null;
+                          const path = pathFromRingWithBounds(ring, previewBounds, previewSize, previewPad);
+                          const center = projectPoint(centroidOfRing(ring), previewBounds, previewSize, previewPad);
+                          return (
+                            <g key={`ped-${idx}`}>
+                              <path
+                                d={path}
+                                fill="none"
+                                stroke={isDark ? "#22c55e" : "#16a34a"}
+                                strokeWidth="1.4"
+                              />
+                              <text
+                                x={center.x}
+                                y={center.y + 2.8}
+                                fontSize="4.4"
+                                textAnchor="middle"
+                                fill={isDark ? "#86efac" : "#166534"}
+                              >
+                                {zone.label || "ΠΕΖΟΔΡΟΜΟΣ"}
                               </text>
                             </g>
                           );

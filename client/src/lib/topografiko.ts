@@ -26,6 +26,7 @@ export type TEEData = {
 export type PlanningLinesData = {
   urbanLines: Point[][]; // layer 11: Ρυμοτομική γραμμή
   buildingLines: Point[][]; // layer 12: Οικοδομική γραμμή
+  pedestrianZones: { rings: Point[][]; label?: string }[]; // layer 8: Πεζόδρομος
 };
 
 export type BuildingTermsData = {
@@ -568,7 +569,7 @@ export async function fetchContextOTs(otRings: Point[][], currentOt?: string): P
 
 export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<PlanningLinesData> {
   const points = otRings.flatMap((ring) => stripClosingPoint(ring));
-  if (!points.length) return { urbanLines: [], buildingLines: [] };
+  if (!points.length) return { urbanLines: [], buildingLines: [], pedestrianZones: [] };
 
   const projectedPoints = points.map((point) => {
     const [x, y] = transformToGGRS87(point.x, point.y);
@@ -583,9 +584,10 @@ export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<Plann
     maxY: bounds.maxY + padding,
   };
 
-  const [urbanFeatures, buildingFeatures] = await Promise.all([
+  const [urbanFeatures, buildingFeatures, pedestrianFeatures] = await Promise.all([
     fetchTEELayerFeaturesByEnvelope(11, ["OBJECTID"], envelope, true, 500).catch(() => []),
     fetchTEELayerFeaturesByEnvelope(12, ["OBJECTID"], envelope, true, 500).catch(() => []),
+    fetchTEELayerFeaturesByEnvelope(8, ["PZ_XRHSH"], envelope, true, 200).catch(() => []),
   ]);
 
   const toPaths = (features: TEERawFeature[]) =>
@@ -596,9 +598,18 @@ export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<Plann
       }),
     ));
 
+  const pedestrianZones = pedestrianFeatures.map((feature) => ({
+    label: String(feature.attributes?.PZ_XRHSH || "ΠΕΖΟΔΡΟΜΟΣ"),
+    rings: (feature.geometry?.rings || []).map((ring) => ring.map((point) => {
+      const [lon, lat] = transformFromGGRS87(point[0], point[1]);
+      return { x: lon, y: lat };
+    })),
+  })).filter((item) => item.rings.length > 0);
+
   return {
     urbanLines: toPaths(urbanFeatures),
     buildingLines: toPaths(buildingFeatures),
+    pedestrianZones,
   };
 }
 
@@ -1037,6 +1048,7 @@ export function toDXF(
     buildingTerms?: BuildingTermsData | null;
     urbanLines?: Point[][];
     buildingLines?: Point[][];
+    pedestrianZones?: { rings: Point[][]; label?: string }[];
     vertexElevations?: { label: string; z: number }[];
   },
 ) {
@@ -1095,6 +1107,15 @@ export function toDXF(
     if (isLikelyGgrs) return { x: p.x, y: p.y };
     const [x, y] = transformToGGRS87(p.x, p.y);
     return { x, y };
+  }));
+  const projectedPedestrianZones = (meta?.pedestrianZones || []).map((zone) => ({
+    ...zone,
+    rings: zone.rings.map((ring) => ring.map((p) => {
+      const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
+      if (isLikelyGgrs) return { x: p.x, y: p.y };
+      const [x, y] = transformToGGRS87(p.x, p.y);
+      return { x, y };
+    })),
   }));
 
   const paperSize = meta?.paperSize || "A3";
@@ -1264,6 +1285,22 @@ export function toDXF(
       if (index === sheetPoints.length - 1) return;
       const end = sheetPoints[index + 1];
       addMaskedSheetLine(start, end, { layerName: "BUILDING_LINE", colorNumber: 1 });
+    });
+  });
+
+  projectedPedestrianZones.forEach((zone) => {
+    zone.rings.forEach((ring) => {
+      const pts = stripClosingPoint(ring);
+      if (pts.length < 2) return;
+      const sheetPoints = pts.map(toSheet);
+      sheetPoints.forEach((start, index) => {
+        const end = sheetPoints[(index + 1) % sheetPoints.length];
+        addMaskedSheetLine(start, end, { layerName: "OT_BOUNDARY", colorNumber: 3 });
+      });
+      const c = toSheet(centroidOfRing(ring));
+      if (c.x >= drawWin.x0 && c.x <= drawWin.x1 && c.y >= drawWin.y0 && c.y <= drawWin.y1 && !pointInRect(c, legendMaskRect)) {
+        addCenteredDxfText(writer, c.x, c.y - mm(0.6), mm(1.3), zone.label || "ΠΕΖΟΔΡΟΜΟΣ", { layerName: "ANNOTATION", colorNumber: 3 });
+      }
     });
   });
 
