@@ -1355,25 +1355,29 @@ export function toDXF(
     const boxHeight = textHeight + padY * 2;
     const halfW = boxWidth / 2;
     const halfH = boxHeight / 2;
+    const halfWorldX = halfW / scale;
+    const halfWorldY = halfH / scale;
 
     const worldBounds = boundsFromPoints(ringWorld);
     const worldCenter = centroidOfRing(ringWorld);
-    const bboxCenter = { x: (worldBounds.minX + worldBounds.maxX) / 2, y: (worldBounds.minY + worldBounds.maxY) / 2 };
-    const edgeMidpoints = ringWorld.map((point, index) => {
-      const next = ringWorld[(index + 1) % ringWorld.length];
-      return { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 };
-    });
 
-    const worldCandidates = [worldCenter, bboxCenter, ...edgeMidpoints]
-      .filter((point) => pointInRing(point, ringWorld));
-
-    const candidates = (worldCandidates.length ? worldCandidates : [worldCenter]).map((point) => {
-      const p = toSheet(point);
-      return {
-        x: Math.max(drawWin.x0 + halfW + 0.5, Math.min(drawWin.x1 - halfW - 0.5, p.x)),
-        y: Math.max(drawWin.y0 + halfH + 0.5, Math.min(drawWin.y1 - halfH - 0.5, p.y)),
-      };
-    });
+    const gridSteps = 8;
+    const worldCandidates: Point[] = [worldCenter];
+    for (let ix = 0; ix <= gridSteps; ix += 1) {
+      for (let iy = 0; iy <= gridSteps; iy += 1) {
+        const x = worldBounds.minX + ((worldBounds.maxX - worldBounds.minX) * ix) / gridSteps;
+        const y = worldBounds.minY + ((worldBounds.maxY - worldBounds.minY) * iy) / gridSteps;
+        const c = { x, y };
+        if (!pointInRing(c, ringWorld)) continue;
+        const corners = [
+          { x: c.x - halfWorldX, y: c.y - halfWorldY },
+          { x: c.x + halfWorldX, y: c.y - halfWorldY },
+          { x: c.x + halfWorldX, y: c.y + halfWorldY },
+          { x: c.x - halfWorldX, y: c.y + halfWorldY },
+        ];
+        if (corners.every((corner) => pointInRing(corner, ringWorld))) worldCandidates.push(c);
+      }
+    }
 
     const rectFor = (p: { x: number; y: number }) => ({
       minX: p.x - halfW,
@@ -1382,33 +1386,40 @@ export function toDXF(
       maxY: p.y + halfH,
     });
 
-    const scoreCandidate = (p: { x: number; y: number }) => {
+    const scoreCandidate = (worldPoint: Point) => {
+      const p = toSheet(worldPoint);
       const rect = rectFor(p);
-      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return Number.POSITIVE_INFINITY;
+      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return Number.NEGATIVE_INFINITY;
       if (!(rect.maxX < legendMaskRect.minX || rect.minX > legendMaskRect.maxX || rect.maxY < legendMaskRect.minY || rect.minY > legendMaskRect.maxY)) {
-        return Number.POSITIVE_INFINITY;
+        return Number.NEGATIVE_INFINITY;
       }
+
       let hits = 0;
+      let minClearance = Number.POSITIVE_INFINITY;
       labelObstacleSegments.forEach((seg) => {
         if (clipSegmentToRect(seg.start, seg.end, rect)) hits += 1;
+        minClearance = Math.min(minClearance, distancePointToSegment(p, seg.start, seg.end));
       });
+      if (hits > 0) return Number.NEGATIVE_INFINITY;
+
       const centerSheet = toSheet(worldCenter);
-      const distancePenalty = Math.hypot(p.x - centerSheet.x, p.y - centerSheet.y) / 20;
-      return hits * 10 + distancePenalty;
+      const centerPenalty = Math.hypot(p.x - centerSheet.x, p.y - centerSheet.y) * 0.05;
+      return minClearance - centerPenalty;
     };
 
-    let best = candidates[0];
-    let bestScore = scoreCandidate(best);
-    candidates.slice(1).forEach((candidate) => {
+    let bestWorld = worldCenter;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    worldCandidates.forEach((candidate) => {
       const score = scoreCandidate(candidate);
-      if (score < bestScore) {
-        best = candidate;
+      if (score > bestScore) {
         bestScore = score;
+        bestWorld = candidate;
       }
     });
 
-    const x = best.x;
-    const y = best.y;
+    const bestSheet = toSheet(bestWorld);
+    const x = bestSheet.x;
+    const y = bestSheet.y;
     addDxfLine(writer, { x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
     addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_CONTEXT", colorNumber: 7 });
