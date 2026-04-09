@@ -100,7 +100,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showTerms, setShowTerms] = useState(true);
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
-  const [showElevations, setShowElevations] = useState(false);
+  const [showElevations, setShowElevations] = useState(true);
   const [elevationsLoading, setElevationsLoading] = useState(false);
   const [elevationRows, setElevationRows] = useState<ElevationRow[]>([]);
 
@@ -137,7 +137,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setContextLoading(false);
       setParcel(null);
       setElevationRows([]);
-      setShowElevations(false);
+      setShowElevations(true);
       setTeeData(null);
       setTeeCandidates([]);
       setBuildingTerms(null);
@@ -325,16 +325,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [coords]);
 
   const fetchElevations = async () => {
-    if (showElevations) {
-      setShowElevations(false);
-      return;
-    }
-
-    if (elevationRows.length) {
-      setShowElevations(true);
-      return;
-    }
-
     if (!parcel?.rings?.[0]?.length) return;
     const ring = stripClosingPoint(parcel.rings[0]);
     if (!ring.length) return;
@@ -371,6 +361,22 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setElevationsLoading(false);
     }
   };
+
+  const toggleElevations = () => {
+    if (showElevations) {
+      setShowElevations(false);
+      return;
+    }
+    setShowElevations(true);
+    if (!elevationRows.length && !elevationsLoading) {
+      void fetchElevations();
+    }
+  };
+
+  useEffect(() => {
+    if (!parcel || !showElevations || elevationsLoading || elevationRows.length) return;
+    void fetchElevations();
+  }, [parcel, showElevations, elevationsLoading, elevationRows.length]);
 
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
@@ -484,7 +490,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 ))}
                 <button
                   type="button"
-                  onClick={fetchElevations}
+                  onClick={toggleElevations}
                   disabled={elevationsLoading}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
                     showElevations
