@@ -1421,10 +1421,11 @@ export function toDXF(
     const bestSheet = toSheet(bestWorld);
     const x = bestSheet.x;
     const y = bestSheet.y;
+    addDxfLine(writer, { x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addDxfLine(writer, { x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addDxfLine(writer, { x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addDxfLine(writer, { x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
     addCenteredDxfText(writer, x, y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
-    const underlineHalf = estimateTextWidth(text, textHeight) / 2 + mm(0.75);
-    const underlineY = y - textHeight * 0.90;
-    addDxfLine(writer, { x: x - underlineHalf, y: underlineY }, { x: x + underlineHalf, y: underlineY }, { layerName: "OT_LABELS", colorNumber: 7 });
   };
 
   projectedContextOts.forEach((ot) => {
