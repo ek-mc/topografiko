@@ -311,6 +311,16 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   }, [coords]);
 
   const fetchElevations = async () => {
+    if (showElevations) {
+      setShowElevations(false);
+      return;
+    }
+
+    if (elevationRows.length) {
+      setShowElevations(true);
+      return;
+    }
+
     if (!parcel?.rings?.[0]?.length) return;
     const ring = stripClosingPoint(parcel.rings[0]);
     if (!ring.length) return;
@@ -376,6 +386,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           buildingTerms: showTerms ? buildingTerms : null,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
+          vertexElevations: elevationRows.length ? elevationRows.map((r) => ({ label: r.label, z: r.z })) : undefined,
         }),
         "application/dxf",
         false,
@@ -458,7 +469,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   disabled={elevationsLoading}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors ${
                     showElevations
-                      ? "border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-200"
+                      ? "border-blue-300 bg-blue-500/10 text-blue-700 dark:border-blue-400/40 dark:bg-blue-400/15 dark:text-blue-200"
                       : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   } ${elevationsLoading ? "opacity-70" : ""}`}
                 >
