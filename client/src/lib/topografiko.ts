@@ -1334,7 +1334,25 @@ export function toDXF(
     }));
   };
 
-  buildParcelEdgeLabels(mainParcelPoints).forEach((edge, index) => {
+  const edgeDefs = buildParcelEdgeLabels(mainParcelPoints);
+  const touchedByPedestrian = edgeDefs.map((edge, index) => {
+    const aWorld = mainParcelPoints[index];
+    const bWorld = mainParcelPoints[(index + 1) % mainParcelPoints.length];
+    return {
+      index,
+      length: edge.length,
+      touched: edgeTouchesPedestrian(aWorld, bWorld),
+    };
+  });
+  const pedestrianLabelIndexes = new Set(
+    touchedByPedestrian
+      .filter((item) => item.touched)
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 2)
+      .map((item) => item.index),
+  );
+
+  edgeDefs.forEach((edge, index) => {
     const aWorld = mainParcelPoints[index];
     const bWorld = mainParcelPoints[(index + 1) % mainParcelPoints.length];
     const start = parcelSheetPoints[index];
@@ -1390,7 +1408,7 @@ export function toDXF(
       colorNumber: 7,
     });
 
-    if (edgeTouchesPedestrian(aWorld, bWorld)) {
+    if (pedestrianLabelIndexes.has(index)) {
       const frontagePoint = {
         x: labelPoint.x,
         y: labelPoint.y + mm(1.4),
