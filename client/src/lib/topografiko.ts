@@ -26,7 +26,6 @@ export type TEEData = {
 export type PlanningLinesData = {
   urbanLines: Point[][]; // layer 11: Ρυμοτομική γραμμή
   buildingLines: Point[][]; // layer 12: Οικοδομική γραμμή
-  pedestrianZones: { rings: Point[][]; label?: string }[];
 };
 
 export type BuildingTermsData = {
@@ -569,7 +568,7 @@ export async function fetchContextOTs(otRings: Point[][], currentOt?: string): P
 
 export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<PlanningLinesData> {
   const points = otRings.flatMap((ring) => stripClosingPoint(ring));
-  if (!points.length) return { urbanLines: [], buildingLines: [], pedestrianZones: [] };
+  if (!points.length) return { urbanLines: [], buildingLines: [] };
 
   const projectedPoints = points.map((point) => {
     const [x, y] = transformToGGRS87(point.x, point.y);
@@ -584,10 +583,9 @@ export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<Plann
     maxY: bounds.maxY + padding,
   };
 
-  const [urbanFeatures, buildingFeatures, pedestrianFeatures] = await Promise.all([
+  const [urbanFeatures, buildingFeatures] = await Promise.all([
     fetchTEELayerFeaturesByEnvelope(11, ["OBJECTID"], envelope, true, 500).catch(() => []),
     fetchTEELayerFeaturesByEnvelope(12, ["OBJECTID"], envelope, true, 500).catch(() => []),
-    fetchTEELayerFeaturesByEnvelope(8, ["PZ_XRHSH"], envelope, true, 200).catch(() => []),
   ]);
 
   const toPaths = (features: TEERawFeature[]) =>
@@ -598,18 +596,9 @@ export async function fetchPlanningLinesForOT(otRings: Point[][]): Promise<Plann
       }),
     ));
 
-  const pedestrianZones = pedestrianFeatures.map((feature) => ({
-    label: String(feature.attributes?.PZ_XRHSH || "ΠΕΖΟΔΡΟΜΟΣ"),
-    rings: (feature.geometry?.rings || []).map((ring) => ring.map((point) => {
-      const [lon, lat] = transformFromGGRS87(point[0], point[1]);
-      return { x: lon, y: lat };
-    })),
-  })).filter((item) => item.rings.length > 0);
-
   return {
     urbanLines: toPaths(urbanFeatures),
     buildingLines: toPaths(buildingFeatures),
-    pedestrianZones,
   };
 }
 
@@ -1048,7 +1037,6 @@ export function toDXF(
     buildingTerms?: BuildingTermsData | null;
     urbanLines?: Point[][];
     buildingLines?: Point[][];
-    pedestrianZones?: { rings: Point[][]; label?: string }[];
     vertexElevations?: { label: string; z: number }[];
   },
 ) {
@@ -1107,15 +1095,6 @@ export function toDXF(
     if (isLikelyGgrs) return { x: p.x, y: p.y };
     const [x, y] = transformToGGRS87(p.x, p.y);
     return { x, y };
-  }));
-  const projectedPedestrianZones = (meta?.pedestrianZones || []).map((zone) => ({
-    ...zone,
-    rings: zone.rings.map((ring) => ring.map((p) => {
-      const isLikelyGgrs = Math.abs(p.x) > 1000 && Math.abs(p.y) > 1000;
-      if (isLikelyGgrs) return { x: p.x, y: p.y };
-      const [x, y] = transformToGGRS87(p.x, p.y);
-      return { x, y };
-    })),
   }));
 
   const paperSize = meta?.paperSize || "A3";
@@ -1321,40 +1300,7 @@ export function toDXF(
   const parcelSheetPoints = mainParcelPoints.map(toSheet);
   const parcelCenter = centroidOfRing(parcelSheetPoints);
 
-  const edgeTouchesPedestrian = (aWorld: Point, bWorld: Point) => {
-    return projectedPedestrianZones.some((zone) => zone.rings.some((ring) => {
-      const pts = stripClosingPoint(ring);
-      if (pts.length < 2) return false;
-      const mid = { x: (aWorld.x + bWorld.x) / 2, y: (aWorld.y + bWorld.y) / 2 };
-      if (pointInRing(mid, pts)) return true;
-      return pts.some((p, i) => {
-        const q = pts[(i + 1) % pts.length];
-        return segmentDistance(aWorld, bWorld, p, q) <= 1.2;
-      });
-    }));
-  };
-
-  const edgeDefs = buildParcelEdgeLabels(mainParcelPoints);
-  const touchedByPedestrian = edgeDefs.map((edge, index) => {
-    const aWorld = mainParcelPoints[index];
-    const bWorld = mainParcelPoints[(index + 1) % mainParcelPoints.length];
-    return {
-      index,
-      length: edge.length,
-      touched: edgeTouchesPedestrian(aWorld, bWorld),
-    };
-  });
-  const pedestrianLabelIndexes = new Set(
-    touchedByPedestrian
-      .filter((item) => item.touched)
-      .sort((a, b) => b.length - a.length)
-      .slice(0, 2)
-      .map((item) => item.index),
-  );
-
-  edgeDefs.forEach((edge, index) => {
-    const aWorld = mainParcelPoints[index];
-    const bWorld = mainParcelPoints[(index + 1) % mainParcelPoints.length];
+  buildParcelEdgeLabels(mainParcelPoints).forEach((edge, index) => {
     const start = parcelSheetPoints[index];
     const end = parcelSheetPoints[(index + 1) % parcelSheetPoints.length];
     const vertex = start;
@@ -1407,18 +1353,6 @@ export function toDXF(
       layerName: "PARCEL_LABELS",
       colorNumber: 7,
     });
-
-    if (pedestrianLabelIndexes.has(index)) {
-      const frontagePoint = {
-        x: labelPoint.x,
-        y: labelPoint.y + mm(1.4),
-      };
-      addCenteredDxfText(writer, frontagePoint.x, frontagePoint.y, mm(0.95), "ΠΕΖΟΔΡΟΜΟΣ", {
-        rotation: edgeAngleDegrees(start, end),
-        layerName: "ANNOTATION",
-        colorNumber: 3,
-      });
-    }
   });
 
   const labelObstacleSegments: Array<{ start: Point; end: Point }> = [];
