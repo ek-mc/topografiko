@@ -90,6 +90,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [officialRoadNames, setOfficialRoadNames] = useState<string[]>([]);
   const [urbanLines, setUrbanLines] = useState<Point[][]>([]);
   const [buildingLines, setBuildingLines] = useState<Point[][]>([]);
+  const [pedestrianZones, setPedestrianZones] = useState<Array<{ rings: Point[][]; label?: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [contextLoading, setContextLoading] = useState(false);
   const [mode, setMode] = useState<ExportMode>("full");
@@ -147,6 +148,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setOfficialRoadNames([]);
       setUrbanLines([]);
       setBuildingLines([]);
+      setPedestrianZones([]);
 
       try {
         const result = await fetchParcelByKaek(initialKaek);
@@ -176,10 +178,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
             if (cancelled) return;
             setUrbanLines(lines.urbanLines);
             setBuildingLines(lines.buildingLines);
+            setPedestrianZones(lines.pedestrianZones || []);
           }).catch(() => {
             if (cancelled) return;
             setUrbanLines([]);
             setBuildingLines([]);
+            setPedestrianZones([]);
           });
         }
 
@@ -411,6 +415,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           buildingTerms: showTerms ? buildingTerms : null,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
+          pedestrianZones: includeFullContext ? pedestrianZones : undefined,
           vertexElevations: elevationRows.length ? elevationRows.map((r) => ({ label: r.label, z: r.z })) : undefined,
         }),
         "application/dxf",
