@@ -123,21 +123,25 @@ const DEFAULT_DECLARATION_TEMPLATES = [
   {
     key: "n65177",
     title: "Δήλωση Ν.651/77",
+    signerLabel: "Ο ΜΗΧΑΝΙΚΟΣ",
     template: "Το οικόπεδο με τα στοιχεία {{loopLabel}} και ΚΑΕΚ {{kaek}}, ιδιοκτησίας του eTopografiko, που βρίσκεται επί της οδού eTopografiko και αρ. eTopografiko στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} είναι άρτιο και οικοδομήσιμο σύμφωνα με τις κείμενες πολεοδομικές διατάξεις.",
   },
   {
     key: "boundaries",
     title: "Δήλωση Υλοποίησης Ορίων",
+    signerLabel: "Ο ΙΔΙΟΚΤΗΤΗΣ",
     template: "Δηλώνω ότι τα όρια του οικοπέδου με ΚΑΕΚ {{kaek}} στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} έχουν υλοποιηθεί σύμφωνα με τα διαθέσιμα στοιχεία της αποτύπωσης.",
   },
   {
     key: "ogrg",
     title: "Καθορισμός ΟΓ-ΡΓ",
+    signerLabel: "Ο ΜΗΧΑΝΙΚΟΣ",
     template: "Οι Ο.Γ.-Ρ.Γ. του οικοπέδου με ΚΑΕΚ {{kaek}} στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} θα τεθούν επί των καλώς μορφωμένων Ο.Γ. και Ρ.Γ. σύμφωνα με το εγκεκριμένο ρυμοτομικό σχέδιο.",
   },
   {
     key: "dei-rema",
     title: "Δήλωση ΔΕΗ-Ρεμάτων",
+    signerLabel: "Ο ΜΗΧΑΝΙΚΟΣ",
     template: "Δηλώνω ότι από το οικόπεδο με ΚΑΕΚ {{kaek}} στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} δεν διέρχεται ρέμα ούτε γραμμή υψηλής τάσης. Να προσαρμοστεί εφόσον απαιτείται ειδικός έλεγχος για την περιοχή.",
   },
 ] as const;
@@ -196,7 +200,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
-  const [showDeclarations, setShowDeclarations] = useState(false);
+  const [activeDeclarations, setActiveDeclarations] = useState<Record<string, boolean>>(() => (
+    Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
+  ));
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
@@ -441,8 +447,10 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       ...(includeOtContext && previewOtRings.length ? [{ rings: previewOtRings } as { rings: Point[][] }] : []),
       ...(includeFullContext ? previewContextOts.map((item) => ({ rings: item.rings })) : []),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
-    return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, previewOtRings, previewContextOts, includeOtContext, includeFullContext]);
+    const annotationPoints = previewNearbyAnnotations.map((item) => item.point);
+    const allPoints = [...points, ...annotationPoints];
+    return allPoints.length ? boundsFromPoints(allPoints) : null;
+  }, [previewParcels, previewOtRings, previewContextOts, previewNearbyAnnotations, includeOtContext, includeFullContext]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
     if (parcel?.officialRingsGgrs87?.[0]?.length) {
@@ -484,10 +492,16 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
   const declarationRows = useMemo(() => {
     return DEFAULT_DECLARATION_TEMPLATES.map((item) => ({
+      key: item.key,
       title: item.title,
+      signerLabel: item.signerLabel,
       text: renderDeclarationTemplate(item.template, declarationValues),
     }));
   }, [declarationValues]);
+
+  const activeDeclarationRows = useMemo(() => {
+    return declarationRows.filter((row) => activeDeclarations[row.key]);
+  }, [declarationRows, activeDeclarations]);
 
   const fetchElevations = async () => {
     if (!parcel?.rings?.[0]?.length) return;
@@ -577,7 +591,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           otRings: includeOtContext ? teeData?.rings : undefined,
           contextOts: includeFullContext ? contextOts : undefined,
           buildingTerms: showTerms ? buildingTerms : null,
-          declarations: showDeclarations ? declarationRows : undefined,
+          declarations: activeDeclarationRows.length ? activeDeclarationRows : undefined,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
         }),
@@ -636,13 +650,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               </div>
 
               <div className="inline-flex flex-wrap gap-2 text-sm">
-                {[
+                  {[
                   { state: showCoords, setter: setShowCoords, label: "Συντεταγμένες" },
                   { state: showParcelData, setter: setShowParcelData, label: "Στοιχεία" },
                   { state: showLegend, setter: setShowLegend, label: "Υπόμνημα" },
                   { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
                   { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
-                  { state: showDeclarations, setter: setShowDeclarations, label: "Δηλώσεις" },
                 ].map(({ state, setter, label }) => (
                   <button
                     key={label}
@@ -657,6 +670,23 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     {label}
                   </button>
                 ))}
+                {DEFAULT_DECLARATION_TEMPLATES.map((item) => {
+                  const active = activeDeclarations[item.key];
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setActiveDeclarations((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                      className={`rounded-full border px-3 py-1.5 transition-colors ${
+                        active
+                          ? "border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-200"
+                          : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      }`}
+                    >
+                      {item.title}
+                    </button>
+                  );
+                })}
                 <button
                   type="button"
                   onClick={toggleElevations}
@@ -816,24 +846,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                             </g>
                           );
                         })}
-                        {previewNearbyAnnotations.map((item, index) => {
-                          if (!previewBounds) return null;
-                          const p = projectPoint(item.point, previewBounds, previewSize, previewPad);
-                          return (
-                            <text
-                              key={`nearby-${item.kind}-${item.label}-${index}`}
-                              x={p.x}
-                              y={p.y}
-                              fontSize={item.kind === "pedestrian-road" ? 4.2 : 3.8}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              transform={item.kind === "pedestrian-road" && typeof item.rotationDegrees === "number" ? `rotate(${item.rotationDegrees} ${p.x} ${p.y})` : undefined}
-                              fill={item.kind === "pedestrian-road" ? (isDark ? "#fde047" : "#a16207") : (isDark ? "#86efac" : "#166534")}
-                            >
-                              {item.label}
-                            </text>
-                          );
-                        })}
                         {previewParcels.filter((item) => item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
                           const c = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
@@ -889,6 +901,28 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                             </g>
                           );
                         })()}
+                        {previewNearbyAnnotations.map((item, index) => {
+                          if (!previewBounds) return null;
+                          const p = projectPoint(item.point, previewBounds, previewSize, previewPad);
+                          return (
+                            <text
+                              key={`nearby-${item.kind}-${item.label}-${index}`}
+                              x={p.x}
+                              y={p.y}
+                              fontSize={item.kind === "pedestrian-road" ? 4.6 : 4.2}
+                              fontWeight={item.kind === "pedestrian-road" ? 600 : 700}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              paintOrder="stroke"
+                              stroke={isDark ? "#020617" : "#ffffff"}
+                              strokeWidth="0.9"
+                              transform={item.kind === "pedestrian-road" && typeof item.rotationDegrees === "number" ? `rotate(${item.rotationDegrees} ${p.x} ${p.y})` : undefined}
+                              fill={item.kind === "pedestrian-road" ? (isDark ? "#fde047" : "#a16207") : (isDark ? "#86efac" : "#166534")}
+                            >
+                              {item.label}
+                            </text>
+                          );
+                        })}
                         {Array.from({ length: 4 }).map((_, ix) => {
                           const x = 56 + ix * 50;
                           return Array.from({ length: 4 }).map((__, iy) => {
@@ -954,7 +988,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div className="border-b border-border px-3 py-2 text-center text-[11px] font-semibold tracking-wide text-foreground">
                           ΣΥΝΤ/ΜΕΝΕΣ ΚΟΡΥΦΩΝ ΟΙΚΟΠΕΔΟΥ ΕΓΣΑ&apos;87
                         </div>
-                        <div className={`grid ${showElevations ? "grid-cols-[52px_1fr_1fr_82px_92px]" : "grid-cols-[52px_1fr_1fr_82px]"} border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground`}>
+                        <div className={`grid ${showElevations ? "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px_92px]" : "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px]"} border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground`}>
                           <div>Α/Α</div>
                           <div>X</div>
                           <div>Y</div>
@@ -963,7 +997,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         </div>
                         <div className="divide-y divide-border text-xs">
                           {coords.map((row, idx) => (
-                            <div key={row.label} className={`grid ${showElevations ? "grid-cols-[52px_1fr_1fr_82px_92px]" : "grid-cols-[52px_1fr_1fr_82px]"} px-3 py-1.5`}>
+                            <div key={row.label} className={`grid ${showElevations ? "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px_92px]" : "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px]"} px-3 py-1.5`}>
                               <div>{row.label}</div>
                               <div>{row.x}</div>
                               <div>{row.y}</div>
@@ -1001,8 +1035,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   {showTerms ? (
                     <Panel title="Όροι Δόμησης / Πολεοδομικά Στοιχεία">
                       {buildingTerms ? (
-                        <div className="space-y-3 text-xs">
-                          <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5">
+                        <div className="space-y-4 text-xs">
+                          <div className="grid grid-cols-[112px_1fr] gap-x-4 gap-y-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
                             {buildingTermsRows.map(([label, value]) => (
                               <Fragment key={label}>
                                 <div className="text-muted-foreground">{label}</div>
@@ -1011,25 +1045,27 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                             ))}
                           </div>
                           {buildingTerms.notes.length ? (
-                            <div className="space-y-1.5 border-t border-border pt-2 text-muted-foreground">
+                            <div className="space-y-2 border-t border-border pt-3 text-muted-foreground">
                               {buildingTerms.notes.map((note, index) => (
                                 <div key={`${index}-${note}`}>{note}</div>
                               ))}
                             </div>
                           ) : null}
                           {(buildingTerms.sourceFek || buildingTerms.sourceDecisionNumber || buildingTerms.sourceDate) ? (
-                            <div className="border-t border-border pt-2 text-[11px] text-muted-foreground">
+                            <div className="border-t border-border pt-3 text-[11px] leading-5 text-muted-foreground">
                               {buildingTerms.sourceFek ? <div>ΦΕΚ: {buildingTerms.sourceFek}</div> : null}
                               {buildingTerms.sourceDecisionNumber ? <div>Αριθ. απόφασης: {buildingTerms.sourceDecisionNumber}</div> : null}
                               {buildingTerms.sourceDate ? <div>Ημ/νία: {buildingTerms.sourceDate}</div> : null}
                             </div>
                           ) : null}
-                          {showDeclarations ? (
-                            <div className="space-y-3 border-t border-border pt-3">
-                              {declarationRows.map((row) => (
-                                <div key={row.title} className="space-y-1.5">
+                          {activeDeclarationRows.length ? (
+                            <div className="space-y-5 border-t border-border pt-4">
+                              {activeDeclarationRows.map((row) => (
+                                <div key={row.key} className="space-y-3 border-b border-border/60 pb-5 last:border-b-0 last:pb-1">
                                   <div className="font-semibold text-foreground">{row.title}</div>
-                                  <div className="leading-5 text-muted-foreground">{row.text}</div>
+                                  <div className="leading-6 text-muted-foreground">{row.text}</div>
+                                  <div className="pt-4 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/85">{row.signerLabel}</div>
+                                  <div className="h-10" />
                                 </div>
                               ))}
                             </div>

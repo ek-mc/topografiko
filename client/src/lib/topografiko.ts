@@ -1416,7 +1416,7 @@ export function toDXF(
     otRings?: Point[][];
     contextOts?: TEEData[];
     buildingTerms?: BuildingTermsData | null;
-    declarations?: Array<{ title: string; text: string }>;
+    declarations?: Array<{ title: string; text: string; signerLabel?: string }>;
     nearbyAnnotations?: NearbyPlanningAnnotation[];
     urbanLines?: Point[][];
     buildingLines?: Point[][];
@@ -1531,7 +1531,8 @@ export function toDXF(
   const referencePoints = fitPoints.length
     ? fitPoints
     : rotatedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
-  const fitBounds = boundsFromPoints(referencePoints.length ? referencePoints : mainParcelPoints);
+  const nearbyFitPoints = rotatedNearbyAnnotations.map((item) => item.point);
+  const fitBounds = boundsFromPoints(referencePoints.length ? [...referencePoints, ...nearbyFitPoints] : [...mainParcelPoints, ...nearbyFitPoints]);
   const fitCenterX = (fitBounds.minX + fitBounds.maxX) / 2;
   const fitCenterY = (fitBounds.minY + fitBounds.maxY) / 2;
   const worldSpanX = Math.max(fitBounds.maxX - fitBounds.minX, 1);
@@ -1738,31 +1739,48 @@ export function toDXF(
     };
   });
   const occupiedNearbyRects = [...otBlockedRects, legendMaskRect];
+  const insideDrawWindow = (rect: { minX: number; minY: number; maxX: number; maxY: number }) => (
+    rect.minX >= drawWin.x0 && rect.maxX <= drawWin.x1 && rect.minY >= drawWin.y0 && rect.maxY <= drawWin.y1
+  );
+  const overlapsLegend = (rect: { minX: number; minY: number; maxX: number; maxY: number }) => rectsOverlap(rect, legendMaskRect);
   const placedNearbyAnnotations = rawSheetNearbyAnnotations.flatMap((item) => {
     const height = item.kind === "pedestrian-road" ? mm(1.55) : mm(1.4);
-    if (item.kind === "pedestrian-road") {
-      const rect = buildNearbyTextRect(item.point, item.label, height);
-      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return [];
-      if (occupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) return [];
-      occupiedNearbyRects.push(rect);
-      return [{ ...item, height, point: item.point }];
-    }
+    const rotationRadians = ((item.rotationDegrees || 0) * Math.PI) / 180;
+    const tangent = { x: Math.cos(rotationRadians), y: Math.sin(rotationRadians) };
+    const normal = { x: -tangent.y, y: tangent.x };
+    const placementCandidates = item.kind === "pedestrian-road"
+      ? [
+          item.point,
+          { x: item.point.x + normal.x * mm(6), y: item.point.y + normal.y * mm(6) },
+          { x: item.point.x - normal.x * mm(6), y: item.point.y - normal.y * mm(6) },
+          { x: item.point.x + tangent.x * mm(8), y: item.point.y + tangent.y * mm(8) },
+          { x: item.point.x - tangent.x * mm(8), y: item.point.y - tangent.y * mm(8) },
+        ]
+      : [
+          item.point,
+          { x: item.point.x + mm(12), y: item.point.y },
+          { x: item.point.x - mm(12), y: item.point.y },
+          { x: item.point.x, y: item.point.y + mm(8) },
+          { x: item.point.x, y: item.point.y - mm(8) },
+          { x: item.point.x + mm(10), y: item.point.y + mm(6) },
+          { x: item.point.x - mm(10), y: item.point.y + mm(6) },
+          { x: item.point.x + mm(10), y: item.point.y - mm(6) },
+          { x: item.point.x - mm(10), y: item.point.y - mm(6) },
+        ];
 
-    const candidates = [
-      item.point,
-      { x: item.point.x + mm(12), y: item.point.y },
-      { x: item.point.x - mm(12), y: item.point.y },
-      { x: item.point.x, y: item.point.y + mm(8) },
-      { x: item.point.x, y: item.point.y - mm(8) },
-      { x: item.point.x + mm(10), y: item.point.y + mm(6) },
-      { x: item.point.x - mm(10), y: item.point.y + mm(6) },
-    ];
-    for (const candidate of candidates) {
+    for (const candidate of placementCandidates) {
       const rect = buildNearbyTextRect(candidate, item.label, height);
-      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) continue;
-      if (occupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) continue;
+      if (!insideDrawWindow(rect) || overlapsLegend(rect)) continue;
+      const shouldAvoidBlocked = item.kind !== "pedestrian-road";
+      if (shouldAvoidBlocked && occupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) continue;
       occupiedNearbyRects.push(rect);
       return [{ ...item, height, point: candidate }];
+    }
+
+    const fallbackRect = buildNearbyTextRect(item.point, item.label, height);
+    if (insideDrawWindow(fallbackRect) && !overlapsLegend(fallbackRect)) {
+      occupiedNearbyRects.push(fallbackRect);
+      return [{ ...item, height, point: item.point }];
     }
     return [];
   });
@@ -2032,8 +2050,9 @@ export function toDXF(
     const titleRowHeight = mm(5);
     const headerRowHeight = mm(4.3);
     const coordRowHeight = mm(4.15);
-    const column1 = tableX0 + mm(12);
-    const column2 = tableX0 + mm(52);
+    const column1 = tableX0 + mm(11);
+    const column2 = tableX0 + mm(35);
+    const column3 = tableX0 + mm(61);
     const tableTop = y + mm(2);
     const tableBottom = tableTop - titleRowHeight - headerRowHeight - coordinateRows.length * coordRowHeight;
 
@@ -2046,9 +2065,11 @@ export function toDXF(
     addDxfLine(writer, { x: tableX0, y: tableTop - titleRowHeight - headerRowHeight }, { x: tableX1, y: tableTop - titleRowHeight - headerRowHeight }, { layerName: "ANNOTATION" });
     addDxfLine(writer, { x: column1, y: tableTop - titleRowHeight }, { x: column1, y: tableBottom }, { layerName: "ANNOTATION" });
     addDxfLine(writer, { x: column2, y: tableTop - titleRowHeight }, { x: column2, y: tableBottom }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: column3, y: tableTop - titleRowHeight }, { x: column3, y: tableBottom }, { layerName: "ANNOTATION" });
     addCenteredDxfText(writer, tableX0 + (column1 - tableX0) / 2, tableTop - titleRowHeight - mm(2.9), mm(1.5), "Α/Α", { layerName: "ANNOTATION" });
     addCenteredDxfText(writer, column1 + (column2 - column1) / 2, tableTop - titleRowHeight - mm(2.9), mm(1.5), "X", { layerName: "ANNOTATION" });
-    addCenteredDxfText(writer, column2 + (tableX1 - column2) / 2, tableTop - titleRowHeight - mm(2.9), mm(1.5), "Y", { layerName: "ANNOTATION" });
+    addCenteredDxfText(writer, column2 + (column3 - column2) / 2, tableTop - titleRowHeight - mm(2.9), mm(1.5), "Y", { layerName: "ANNOTATION" });
+    addCenteredDxfText(writer, column3 + (tableX1 - column3) / 2, tableTop - titleRowHeight - mm(2.9), mm(1.5), "ΠΛΕΥΡΑ", { layerName: "ANNOTATION" });
 
     let rowTop = tableTop - titleRowHeight - headerRowHeight;
     coordinateRows.forEach((row) => {
@@ -2057,7 +2078,8 @@ export function toDXF(
       const rowCenterY = (rowTop + rowBottom) / 2 - mm(0.55);
       addCenteredDxfText(writer, tableX0 + (column1 - tableX0) / 2, rowCenterY, mm(1.45), row.label, { layerName: "ANNOTATION" });
       addCenteredDxfText(writer, column1 + (column2 - column1) / 2, rowCenterY, mm(1.45), row.x, { layerName: "ANNOTATION" });
-      addCenteredDxfText(writer, column2 + (tableX1 - column2) / 2, rowCenterY, mm(1.45), row.y, { layerName: "ANNOTATION" });
+      addCenteredDxfText(writer, column2 + (column3 - column2) / 2, rowCenterY, mm(1.45), row.y, { layerName: "ANNOTATION" });
+      addCenteredDxfText(writer, column3 + (tableX1 - column3) / 2, rowCenterY, mm(1.3), row.side || "-", { layerName: "ANNOTATION" });
       rowTop = rowBottom;
     });
 
@@ -2182,19 +2204,23 @@ export function toDXF(
 
     if (meta?.declarations?.length && y > contentBottomLimit + mm(8)) {
       addDxfLine(writer, { x: x0, y: y + mm(1.5) }, { x: x1, y: y + mm(1.5) }, { layerName: "ANNOTATION" });
-      addDxfText(writer, labelX, y - mm(2), mm(2), "Δηλώσεις", { layerName: "ANNOTATION" });
-      y -= mm(8);
+      y -= mm(4.8);
 
-      meta.declarations.forEach((declaration) => {
+      meta.declarations.forEach((declaration, index) => {
         if (y <= contentBottomLimit) return;
+        if (index > 0) y -= mm(2.4);
         addDxfText(writer, labelX, y, mm(1.48), declaration.title, { layerName: "ANNOTATION" });
-        y -= mm(3.8);
+        y -= mm(4.1);
         wrapTextByWidth(declaration.text, x1 - labelX - mm(4), mm(1.14)).forEach((line) => {
           if (y <= contentBottomLimit) return;
           addDxfText(writer, labelX, y, mm(1.14), line, { layerName: "ANNOTATION" });
-          y -= mm(2.9);
+          y -= mm(3.05);
         });
-        y -= mm(1.6);
+        y -= mm(3.6);
+        if (declaration.signerLabel && y > contentBottomLimit + mm(10)) {
+          addDxfText(writer, x1 - mm(28), y, mm(1.18), declaration.signerLabel, { layerName: "ANNOTATION" });
+          y -= mm(10.5);
+        }
       });
     }
   }
