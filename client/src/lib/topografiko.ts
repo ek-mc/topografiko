@@ -724,19 +724,37 @@ function angleDifferenceDegrees(a: number, b: number) {
   return Math.min(normalized, 180 - normalized);
 }
 
+function segmentProjectionRange(start: Point, end: Point, refStart: Point, refEnd: Point) {
+  const axisX = refEnd.x - refStart.x;
+  const axisY = refEnd.y - refStart.y;
+  const axisLength = Math.hypot(axisX, axisY) || 1;
+  const ux = axisX / axisLength;
+  const uy = axisY / axisLength;
+  const project = (point: Point) => ((point.x - refStart.x) * ux) + ((point.y - refStart.y) * uy);
+  const a = project(start);
+  const b = project(end);
+  return { min: Math.min(a, b), max: Math.max(a, b) };
+}
+
+function projectionOverlapLength(a: { min: number; max: number }, b: { min: number; max: number }) {
+  return Math.max(0, Math.min(a.max, b.max) - Math.max(a.min, b.min));
+}
+
 export function filterOppositeParcels(
   baseRings: Point[][],
   parcels: NeighborParcel[],
   urbanLines: Point[][],
-  options?: { minGapMeters?: number; maxGapMeters?: number; urbanToleranceMeters?: number; angleToleranceDegrees?: number },
+  options?: { minGapMeters?: number; maxGapMeters?: number; urbanToleranceMeters?: number; angleToleranceDegrees?: number; minOverlapMeters?: number; minOverlapRatio?: number },
 ) {
   const baseRing = baseRings[0];
   if (!baseRing?.length || !parcels.length || !urbanLines.length) return [] as NeighborParcel[];
 
   const minGapMeters = options?.minGapMeters ?? 1.5;
   const maxGapMeters = options?.maxGapMeters ?? 35;
-  const urbanToleranceMeters = options?.urbanToleranceMeters ?? 18;
-  const angleToleranceDegrees = options?.angleToleranceDegrees ?? 16;
+  const urbanToleranceMeters = options?.urbanToleranceMeters ?? 16;
+  const angleToleranceDegrees = options?.angleToleranceDegrees ?? 14;
+  const minOverlapMeters = options?.minOverlapMeters ?? 4;
+  const minOverlapRatio = options?.minOverlapRatio ?? 0.3;
 
   const projectedBase = projectedRing(baseRing);
   const baseSegments = ringSegments(projectedBase);
@@ -767,6 +785,16 @@ export function filterOppositeParcels(
         if (angleDifferenceDegrees(baseAngle, parcelAngle) > angleToleranceDegrees) return false;
         const gap = segmentDistance(baseStart, baseEnd, parcelStart, parcelEnd);
         if (gap < minGapMeters || gap > maxGapMeters) return false;
+
+        const baseLength = Math.hypot(baseEnd.x - baseStart.x, baseEnd.y - baseStart.y);
+        const parcelLength = Math.hypot(parcelEnd.x - parcelStart.x, parcelEnd.y - parcelStart.y);
+        const overlap = projectionOverlapLength(
+          segmentProjectionRange(baseStart, baseEnd, baseStart, baseEnd),
+          segmentProjectionRange(parcelStart, parcelEnd, baseStart, baseEnd),
+        );
+        const requiredOverlap = Math.max(minOverlapMeters, Math.min(baseLength, parcelLength) * minOverlapRatio);
+        if (overlap < requiredOverlap) return false;
+
         return urbanSegments.some(([urbanStart, urbanEnd]) => {
           const urbanAngle = segmentAngleDegreesRaw(urbanStart, urbanEnd);
           if (angleDifferenceDegrees(baseAngle, urbanAngle) > angleToleranceDegrees) return false;
@@ -1412,6 +1440,14 @@ export function toDXF(
         colorNumber: 8,
       });
     });
+    if (parcel.relation !== "adjacent") return;
+    const labelPoint = toSheet(centroidOfRing(parcel.rings[0] || []));
+    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
+      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), mm(1.2), parcel.kaek, {
+        layerName: "ANNOTATION",
+        colorNumber: 8,
+      });
+    }
   });
 
   const mainSheetPoints = mainParcelPoints.map(toSheet);

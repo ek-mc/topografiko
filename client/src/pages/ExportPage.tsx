@@ -727,6 +727,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         })}
                         {previewParcels.filter((item) => !item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
+                          const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
                           return (
                             <g key={`adj-${item.kaek}`}>
                               <path
@@ -736,6 +737,17 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                                 strokeWidth="1"
                                 strokeDasharray="5 3"
                               />
+                              {item.relation === "adjacent" ? (
+                                <text
+                                  x={center.x}
+                                  y={center.y + 3}
+                                  fontSize="6"
+                                  textAnchor="middle"
+                                  fill={isDark ? "#e2e8f0" : "#475569"}
+                                >
+                                  {item.kaek}
+                                </text>
+                              ) : null}
                             </g>
                           );
                         })}
