@@ -1440,7 +1440,6 @@ export function toDXF(
         colorNumber: 8,
       });
     });
-    if (parcel.relation !== "adjacent") return;
     const labelPoint = toSheet(centroidOfRing(parcel.rings[0] || []));
     if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
       addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), mm(1.2), parcel.kaek, {

@@ -737,17 +737,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                                 strokeWidth="1"
                                 strokeDasharray="5 3"
                               />
-                              {item.relation === "adjacent" ? (
-                                <text
-                                  x={center.x}
-                                  y={center.y + 3}
-                                  fontSize="6"
-                                  textAnchor="middle"
-                                  fill={isDark ? "#e2e8f0" : "#475569"}
-                                >
-                                  {item.kaek}
-                                </text>
-                              ) : null}
+                              <text
+                                x={center.x}
+                                y={center.y + 3}
+                                fontSize="6"
+                                textAnchor="middle"
+                                fill={isDark ? "#e2e8f0" : "#475569"}
+                              >
+                                {item.kaek}
+                              </text>
                             </g>
                           );
                         })}
