@@ -267,8 +267,73 @@ function distancePointToRing(point: Point, ring: Point[]) {
   return minDistance;
 }
 
+function distancePointToRingBoundary(point: Point, ring: Point[]) {
+  const usable = stripClosingPoint(ring);
+  if (!usable.length) return Number.POSITIVE_INFINITY;
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < usable.length; index += 1) {
+    const start = usable[index];
+    const end = usable[(index + 1) % usable.length];
+    minDistance = Math.min(minDistance, distancePointToSegment(point, start, end));
+  }
+  return minDistance;
+}
+
 function distancePointToRings(point: Point, rings: Point[][]) {
   return rings.reduce((minDistance, ring) => Math.min(minDistance, distancePointToRing(point, ring)), Number.POSITIVE_INFINITY);
+}
+
+function pointInAnyRing(point: Point, rings: Point[][]) {
+  return rings.some((ring) => pointInRing(point, ring));
+}
+
+export function findBestOtLabelPoint(sourceRing: Point[], avoidRings: Point[][] = []) {
+  const ringWorld = stripClosingPoint(sourceRing);
+  if (ringWorld.length < 3) return null;
+
+  const usableAvoidRings = avoidRings
+    .map((ring) => stripClosingPoint(ring))
+    .filter((ring) => ring.length >= 3);
+  const worldBounds = boundsFromPoints(ringWorld);
+  const worldCenter = centroidOfRing(ringWorld);
+  const candidates: Point[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (point: Point | null) => {
+    if (!point) return;
+    if (!pointInRing(point, ringWorld) || pointInAnyRing(point, usableAvoidRings)) return;
+    const key = `${point.x.toFixed(3)}:${point.y.toFixed(3)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(point);
+  };
+
+  addCandidate(worldCenter);
+  const gridSteps = 12;
+  for (let ix = 0; ix <= gridSteps; ix += 1) {
+    for (let iy = 0; iy <= gridSteps; iy += 1) {
+      addCandidate({
+        x: worldBounds.minX + ((worldBounds.maxX - worldBounds.minX) * ix) / gridSteps,
+        y: worldBounds.minY + ((worldBounds.maxY - worldBounds.minY) * iy) / gridSteps,
+      });
+    }
+  }
+
+  let best: Point | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  candidates.forEach((candidate) => {
+    const sourceClearance = distancePointToRingBoundary(candidate, ringWorld);
+    const avoidClearance = usableAvoidRings.length
+      ? usableAvoidRings.reduce((minDistance, ring) => Math.min(minDistance, distancePointToRingBoundary(candidate, ring)), Number.POSITIVE_INFINITY)
+      : sourceClearance;
+    const centerPenalty = Math.sqrt(distanceSquared(candidate, worldCenter)) * 0.12;
+    const score = sourceClearance * 1.15 + avoidClearance * 1.6 - centerPenalty;
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  });
+
+  return best;
 }
 
 function moveLinearPlacementInsideRing(point: Point, rotationDegrees: number, ring: Point[], target: Point) {
@@ -1966,7 +2031,7 @@ export function toDXF(
   rotatedContextOts.forEach((ot) => ot.rings.forEach((ring) => addObstaclePath(ring, true)));
   rotatedOtRings.forEach((ring) => addObstaclePath(ring, true));
 
-  const drawOtBoxLabel = (text: string, sourceRing: Point[]) => {
+  const drawOtBoxLabel = (text: string, sourceRing: Point[], avoidWorldRings: Point[][] = []) => {
     const ringWorld = stripClosingPoint(sourceRing);
     if (!ringWorld.length) return;
 
@@ -1981,7 +2046,7 @@ export function toDXF(
     const halfWorldY = halfH / scale;
 
     const worldBounds = boundsFromPoints(ringWorld);
-    const worldCenter = centroidOfRing(ringWorld);
+    const worldCenter = findBestOtLabelPoint(ringWorld, avoidWorldRings) || centroidOfRing(ringWorld);
 
     const gridSteps = 8;
     const worldCandidates: Point[] = [worldCenter];
@@ -1990,14 +2055,14 @@ export function toDXF(
         const x = worldBounds.minX + ((worldBounds.maxX - worldBounds.minX) * ix) / gridSteps;
         const y = worldBounds.minY + ((worldBounds.maxY - worldBounds.minY) * iy) / gridSteps;
         const c = { x, y };
-        if (!pointInRing(c, ringWorld)) continue;
+        if (!pointInRing(c, ringWorld) || pointInAnyRing(c, avoidWorldRings)) continue;
         const corners = [
           { x: c.x - halfWorldX, y: c.y - halfWorldY },
           { x: c.x + halfWorldX, y: c.y - halfWorldY },
           { x: c.x + halfWorldX, y: c.y + halfWorldY },
           { x: c.x - halfWorldX, y: c.y + halfWorldY },
         ];
-        if (corners.every((corner) => pointInRing(corner, ringWorld))) worldCandidates.push(c);
+        if (corners.every((corner) => pointInRing(corner, ringWorld) && !pointInAnyRing(corner, avoidWorldRings))) worldCandidates.push(c);
       }
     }
 
@@ -2009,6 +2074,7 @@ export function toDXF(
     });
 
     const scoreCandidate = (worldPoint: Point) => {
+      if (pointInAnyRing(worldPoint, avoidWorldRings)) return Number.NEGATIVE_INFINITY;
       const p = toSheet(worldPoint);
       const rect = rectFor(p);
       if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return Number.NEGATIVE_INFINITY;
@@ -2024,9 +2090,12 @@ export function toDXF(
       });
       if (hits > 0) return Number.NEGATIVE_INFINITY;
 
+      const avoidClearance = avoidWorldRings.length
+        ? avoidWorldRings.reduce((minDistance, ring) => Math.min(minDistance, distancePointToRingBoundary(worldPoint, ring) * scale), Number.POSITIVE_INFINITY)
+        : minClearance;
       const centerSheet = toSheet(worldCenter);
       const centerPenalty = Math.hypot(p.x - centerSheet.x, p.y - centerSheet.y) * 0.05;
-      return minClearance - centerPenalty;
+      return minClearance + Math.min(avoidClearance, minClearance) * 0.9 - centerPenalty;
     };
 
     let bestWorld = worldCenter;
@@ -2060,11 +2129,12 @@ export function toDXF(
     addCenteredDxfText(writer, x, y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
   };
 
+  const otLabelAvoidRings = rotatedParcels.flatMap((parcel) => parcel.rings);
   rotatedContextOts.forEach((ot) => {
-    if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0]);
+    if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0], otLabelAvoidRings);
   });
   if (meta?.ot && rotatedOtRings[0]?.length) {
-    drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, rotatedOtRings[0]);
+    drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, rotatedOtRings[0], otLabelAvoidRings);
   }
 
   const northX = drawWin.x0 + mm(16);

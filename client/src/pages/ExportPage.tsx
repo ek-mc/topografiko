@@ -23,6 +23,7 @@ import {
   filterAdjacentParcels,
   filterOppositeParcels,
   formatCoordinateRows,
+  findBestOtLabelPoint,
   getParcelHorizontalRotationDegrees,
   NearbyPlanningAnnotation,
   NeighborParcel,
@@ -200,6 +201,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
+  const [showNearbyLabels, setShowNearbyLabels] = useState(false);
   const [activeDeclarations, setActiveDeclarations] = useState<Record<string, boolean>>(() => (
     Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
   ));
@@ -431,15 +433,17 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     }));
   }, [contextOts, previewRotationCenter, previewRotationDegrees]);
 
+  const activeNearbyAnnotations = useMemo(() => (showNearbyLabels ? nearbyAnnotations : []), [showNearbyLabels, nearbyAnnotations]);
+
   const previewNearbyAnnotations = useMemo(() => {
-    if (!previewRotationCenter || !previewRotationDegrees) return nearbyAnnotations;
-    return nearbyAnnotations.map((item) => ({
+    if (!previewRotationCenter || !previewRotationDegrees) return activeNearbyAnnotations;
+    return activeNearbyAnnotations.map((item) => ({
       ...item,
       point: rotateRings([[item.point]], previewRotationCenter, previewRotationDegrees)[0][0],
       rotationDegrees: typeof item.rotationDegrees === "number" ? item.rotationDegrees + previewRotationDegrees : undefined,
       footprint: item.footprint?.length ? rotateRings([item.footprint], previewRotationCenter, previewRotationDegrees)[0] : undefined,
     }));
-  }, [nearbyAnnotations, previewRotationCenter, previewRotationDegrees]);
+  }, [activeNearbyAnnotations, previewRotationCenter, previewRotationDegrees]);
 
   const previewBounds = useMemo(() => {
     const points = [
@@ -584,7 +588,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           area: parcel.area,
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
-          nearbyAnnotations,
+          nearbyAnnotations: showNearbyLabels ? nearbyAnnotations : [],
           paperSize,
           scaleDenominator,
           parcelHorizontalAlignment,
@@ -656,6 +660,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   { state: showLegend, setter: setShowLegend, label: "Υπόμνημα" },
                   { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
                   { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
+                  { state: showNearbyLabels, setter: setShowNearbyLabels, label: "Κ.Π. / ΠΕΖΟΔΡΟΜΟΣ" },
                 ].map(({ state, setter, label }) => (
                   <button
                     key={label}
@@ -788,7 +793,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         {previewContextOts.map((item, index) => {
                           const ring = item.rings[0];
                           if (!ring?.length) return null;
-                          const center = projectPoint(centroidOfRing(ring), previewBounds, previewSize, previewPad);
+                          const otAnchor = findBestOtLabelPoint(ring, previewParcels.map((parcelItem) => parcelItem.rings[0]).filter(Boolean)) || centroidOfRing(ring);
+                          const center = projectPoint(otAnchor, previewBounds, previewSize, previewPad);
                           const label = `Ο.Τ. ${item.otNumber}`;
                           const labelWidth = Math.max(28, label.length * 2.7);
                           return (
@@ -893,11 +899,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         {(() => {
                           const otRing = previewOtRings[0];
                           if (!otRing) return null;
-                          const c = projectPoint(centroidOfRing(otRing), previewBounds, previewSize, previewPad);
+                          const otAnchor = findBestOtLabelPoint(otRing, previewParcels.map((parcelItem) => parcelItem.rings[0]).filter(Boolean)) || centroidOfRing(otRing);
+                          const c = projectPoint(otAnchor, previewBounds, previewSize, previewPad);
+                          const label = `Ο.Τ. ${teeData?.otNumber || "-"}`;
+                          const labelWidth = Math.max(34, label.length * 2.8);
                           return (
                             <g>
-                              <rect x={c.x - 17} y={c.y - 6.5} width="34" height="13" rx="1.5" fill={isDark ? "#0f172a" : "#f8fafc"} stroke={isDark ? "#e2e8f0" : "#334155"} strokeWidth="1" />
-                              <text x={c.x} y={c.y + 0.5} fontSize="4.8" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{`Ο.Τ. ${teeData?.otNumber || "-"}`}</text>
+                              <rect x={c.x - labelWidth / 2} y={c.y - 6.5} width={labelWidth} height="13" rx="1.5" fill={isDark ? "#0f172a" : "#f8fafc"} stroke={isDark ? "#e2e8f0" : "#334155"} strokeWidth="1" />
+                              <text x={c.x} y={c.y + 0.5} fontSize="4.8" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{label}</text>
                             </g>
                           );
                         })()}
