@@ -1595,8 +1595,8 @@ export function toDXF(
     const panelTopY = titlePanelY1 - mm(3.6);
     const officeBottomY = titlePanelY1 - mm(15);
     const planBlockTopY = titlePanelY0 + mm(31.5);
+    const dateTopY = titlePanelY0 + mm(19.5);
     const stampTopY = titlePanelY0 + mm(14.5);
-    const dateTopY = titlePanelY0 + mm(5.4);
     const fieldLabelX = titlePanelX0 + panelPadX;
     const fieldValueX = titlePanelX0 + mm(28);
     const fieldMaxWidth = titlePanelX1 - fieldValueX - panelPadX;
@@ -1607,8 +1607,8 @@ export function toDXF(
     });
     addDxfLine(writer, { x: titlePanelX0, y: officeBottomY }, { x: titlePanelX1, y: officeBottomY }, { layerName: "ANNOTATION" });
     addDxfLine(writer, { x: titlePanelX0, y: planBlockTopY }, { x: titlePanelX1, y: planBlockTopY }, { layerName: "ANNOTATION" });
-    addDxfLine(writer, { x: titlePanelX0, y: stampTopY }, { x: titlePanelX1, y: stampTopY }, { layerName: "ANNOTATION" });
     addDxfLine(writer, { x: titlePanelX0, y: dateTopY }, { x: titlePanelX1, y: dateTopY }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: titlePanelX0, y: stampTopY }, { x: titlePanelX1, y: stampTopY }, { layerName: "ANNOTATION" });
 
     let fieldY = officeBottomY - mm(4.6);
     const drawTitleField = (label: string, value: string, valueHeight = 1.72) => {
@@ -1637,8 +1637,8 @@ export function toDXF(
     const planValueRowY = planBlockTopY - mm(9.1);
     const leftColX = titlePanelX0 + panelWidth * 0.2;
     const rightColX = titlePanelX0 + panelWidth * 0.84;
-    addDxfLine(writer, { x: leftColX, y: planBlockTopY }, { x: leftColX, y: stampTopY }, { layerName: "ANNOTATION" });
-    addDxfLine(writer, { x: rightColX, y: planBlockTopY }, { x: rightColX, y: stampTopY }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: leftColX, y: planBlockTopY }, { x: leftColX, y: dateTopY }, { layerName: "ANNOTATION" });
+    addDxfLine(writer, { x: rightColX, y: planBlockTopY }, { x: rightColX, y: dateTopY }, { layerName: "ANNOTATION" });
     addCenteredDxfText(writer, (titlePanelX0 + leftColX) / 2, planLabelRowTop, mm(1.42), "ΑΡ. ΣΧΕΔΙΟΥ", { layerName: "ANNOTATION" });
     addCenteredDxfText(writer, (leftColX + rightColX) / 2, planLabelRowTop, mm(1.42), "ΘΕΜΑ ΣΧΕΔΙΟΥ", { layerName: "ANNOTATION" });
     addCenteredDxfText(writer, (rightColX + titlePanelX1) / 2, planLabelRowTop, mm(1.42), "ΚΛΙΜΑΚΑ", { layerName: "ANNOTATION" });
@@ -1647,11 +1647,12 @@ export function toDXF(
     addCenteredDxfText(writer, (rightColX + titlePanelX1) / 2, planValueRowY, mm(3.4), `1:${scaleDenominator}`, { layerName: "ANNOTATION" });
 
     const stampMidX = (titlePanelX0 + titlePanelX1) / 2;
-    addDxfLine(writer, { x: stampMidX, y: dateTopY }, { x: stampMidX, y: stampTopY }, { layerName: "ANNOTATION" });
-    addDxfText(writer, fieldLabelX, stampTopY - mm(2.8), mm(1.55), "ΣΦΡΑΓΙΔΑ", { layerName: "ANNOTATION" });
-    addDxfText(writer, stampMidX + mm(3), stampTopY - mm(2.8), mm(1.55), "ΕΛΕΓΧΟΣ", { layerName: "ANNOTATION" });
-    addDxfText(writer, fieldLabelX, dateTopY - mm(3.1), mm(1.55), "ΗΜΕΡΟΜΗΝΙΑ:", { layerName: "ANNOTATION" });
-    addDxfText(writer, titlePanelX1 - panelPadX - estimateTextWidth(dateText, mm(1.55)), dateTopY - mm(3.1), mm(1.55), dateText, { layerName: "ANNOTATION" });
+    const dateRowTextY = (dateTopY + stampTopY) / 2 - mm(0.7);
+    addDxfLine(writer, { x: stampMidX, y: stampTopY }, { x: stampMidX, y: titlePanelY0 }, { layerName: "ANNOTATION" });
+    addDxfText(writer, fieldLabelX, stampTopY - mm(2.8), mm(1.55), "ΣΦΡΑΓΙΔΑ:", { layerName: "ANNOTATION" });
+    addDxfText(writer, stampMidX + mm(3), stampTopY - mm(2.8), mm(1.55), "ΕΛΕΓΧΟΣ:", { layerName: "ANNOTATION" });
+    addDxfText(writer, fieldLabelX, dateRowTextY, mm(1.55), "ΗΜΕΡΟΜΗΝΙΑ:", { layerName: "ANNOTATION" });
+    addDxfText(writer, titlePanelX1 - panelPadX - estimateTextWidth(dateText, mm(1.55)), dateRowTextY, mm(1.55), dateText, { layerName: "ANNOTATION" });
 
     const terms = meta?.buildingTerms;
     if (terms) {
