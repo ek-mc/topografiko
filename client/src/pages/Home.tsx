@@ -216,6 +216,19 @@ function ownershipLabel(propHor: number | null, propVert: number | null) {
   return "Ακέραια ιδιοκτησία";
 }
 
+async function fetchElevationRowsForRing(ring: Point[]) {
+  const clean = stripClosingPoint(ring);
+  if (!clean.length) return [] as Array<{ label: string; x: number; y: number; z: number }>;
+  const latitudes = clean.map((p) => p.y).join(",");
+  const longitudes = clean.map((p) => p.x).join(",");
+  const url = `https://api.open-meteo.com/v1/elevation?latitude=${encodeURIComponent(latitudes)}&longitude=${encodeURIComponent(longitudes)}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Elevation API failed: ${response.status}`);
+  const data = await response.json();
+  const zValues: number[] = Array.isArray(data?.elevation) ? data.elevation : [];
+  return clean.map((p, idx) => ({ label: greekLabel(idx), x: p.x, y: p.y, z: Number(zValues[idx] ?? NaN) }));
+}
+
 async function fetchParcelByKaek(kaek: string): Promise<ParcelData | null> {
   const normalized = kaek.replace(/\s+/g, "").trim();
   const params = new URLSearchParams({
@@ -617,6 +630,17 @@ export default function Home({ initialKaek }: HomeProps) {
       setMessage("");
       navigate(`/o/${result.kaek}`, { replace: true });
 
+      // Prefetch elevations on Home so Export can reuse cached values
+      void (async () => {
+        try {
+          const rows = await fetchElevationRowsForRing(result.rings[0] || []);
+          if (rows.length) {
+            sessionStorage.setItem(`topografiko:elev:${result.kaek}`, JSON.stringify({ rows, source: "prefetch-home", ts: Date.now() }));
+          }
+        } catch {
+          // silent fallback: export can fetch on-demand
+        }
+      })();
       
       // Fetch TEE OT candidates
       const { fetchTEECandidates } = await import("@/lib/topografiko");

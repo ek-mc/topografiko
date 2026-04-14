@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Mountain } from "lucide-react";
 import NorthArrow from "@/components/NorthArrow";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -109,6 +109,13 @@ function resolveRegionFromParcel(parcel: ParcelData | null | undefined) {
   return nomos ? REGION_BY_NOMOS[nomos] || nomos : undefined;
 }
 
+type ElevationRow = {
+  label: string;
+  x: number;
+  y: number;
+  z: number;
+};
+
 const greekLabels = [
   "Α", "Β", "Γ", "Δ", "Ε", "Ζ", "Η", "Θ", "Ι", "Κ", "Λ", "Μ", "Ν", "Ξ", "Ο", "Π", "Ρ", "Σ", "Τ", "Υ", "Φ", "Χ", "Ψ", "Ω",
 ];
@@ -201,6 +208,23 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
+  const [showElevations, setShowElevations] = useState(false);
+  const [elevationsLoading, setElevationsLoading] = useState(false);
+  const [elevationRows, setElevationRows] = useState<ElevationRow[]>([]);
+
+  useEffect(() => {
+    if (!initialKaek) return;
+    try {
+      const raw = sessionStorage.getItem(`topografiko:elev:${initialKaek}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.rows) && parsed.rows.length) {
+        setElevationRows(parsed.rows);
+      }
+    } catch {
+      // ignore malformed cache
+    }
+  }, [initialKaek]);
 
   useEffect(() => {
     if (!initialKaek) return;
@@ -220,6 +244,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setLoading(true);
       setContextLoading(false);
       setParcel(null);
+      setElevationRows([]);
+      setShowElevations(false);
       setTeeData(null);
       setTeeCandidates([]);
       setBuildingTerms(null);
@@ -481,6 +507,60 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     return declarationRows.filter((row) => activeDeclarations[row.key]);
   }, [declarationRows, activeDeclarations]);
 
+  const fetchElevations = async () => {
+    if (!parcel?.rings?.[0]?.length) return;
+    const ring = stripClosingPoint(parcel.rings[0]);
+    if (!ring.length) return;
+
+    setElevationsLoading(true);
+    try {
+      const latitudes = ring.map((p) => p.y).join(",");
+      const longitudes = ring.map((p) => p.x).join(",");
+      const url = `https://api.open-meteo.com/v1/elevation?latitude=${encodeURIComponent(latitudes)}&longitude=${encodeURIComponent(longitudes)}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Elevation API failed: ${response.status}`);
+      const data = await response.json();
+      const zValues: number[] = Array.isArray(data?.elevation) ? data.elevation : [];
+
+      const rows: ElevationRow[] = ring.map((p, idx) => ({
+        label: pointLabel(idx),
+        x: p.x,
+        y: p.y,
+        z: Number(zValues[idx] ?? NaN),
+      }));
+
+      setElevationRows(rows);
+      setShowElevations(true);
+      try {
+        sessionStorage.setItem(`topografiko:elev:${parcel.kaek}`, JSON.stringify({ rows, source: "export-on-demand", ts: Date.now() }));
+      } catch {
+        // ignore storage failures
+      }
+    } catch (err) {
+      console.error("Failed to fetch elevations", err);
+      setElevationRows([]);
+      setShowElevations(false);
+    } finally {
+      setElevationsLoading(false);
+    }
+  };
+
+  const toggleElevations = () => {
+    if (showElevations) {
+      setShowElevations(false);
+      return;
+    }
+    setShowElevations(true);
+    if (!elevationRows.length && !elevationsLoading) {
+      void fetchElevations();
+    }
+  };
+
+  useEffect(() => {
+    if (!parcel || !showElevations || elevationsLoading || elevationRows.length) return;
+    void fetchElevations();
+  }, [parcel, showElevations, elevationsLoading, elevationRows.length]);
+
   const download = (format: "geojson" | "kml" | "dxf") => {
     if (!parcel) return;
 
@@ -612,6 +692,15 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={toggleElevations}
+                  disabled
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-muted-foreground opacity-60"
+                >
+                  <Mountain className="h-3.5 w-3.5" />
+                  Elevation
+                </button>
               </div>
 
               <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
@@ -784,6 +873,26 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               >
                                 {item.kaek}
                               </text>
+                              {showElevations
+                                ? ringPoints.map((point, idx) => {
+                                    const p = projectPoint(point, previewBounds, previewSize, previewPad);
+                                    const z = elevationRows[idx]?.z;
+                                    const zText = Number.isFinite(z) ? `(+${z.toFixed(2)})` : "(+—)";
+                                    return (
+                                      <g key={`elev-${idx}`}>
+                                        <circle cx={p.x} cy={p.y} r="1.2" fill={isDark ? "#f8fafc" : "#111827"} />
+                                        <text
+                                          x={p.x + 2.4}
+                                          y={p.y - 2.4}
+                                          fontSize="4.1"
+                                          fill={isDark ? "#e5e7eb" : "#111827"}
+                                        >
+                                          {`${pointLabel(idx)} ${zText}`}
+                                        </text>
+                                      </g>
+                                    );
+                                  })
+                                : null}
                             </g>
                           );
                         })}
@@ -888,19 +997,21 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div className="border-b border-border px-3 py-2 text-center text-[11px] font-semibold tracking-wide text-foreground">
                           ΣΥΝΤ/ΜΕΝΕΣ ΚΟΡΥΦΩΝ ΟΙΚΟΠΕΔΟΥ ΕΓΣΑ&apos;87
                         </div>
-                        <div className="grid grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px] border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                        <div className={`grid ${showElevations ? "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px_92px]" : "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px]"} border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground`}>
                           <div>Α/Α</div>
                           <div>X</div>
                           <div>Y</div>
                           <div>Πλευρά</div>
+                          {showElevations ? <div>Z</div> : null}
                         </div>
                         <div className="divide-y divide-border text-xs">
                           {coords.map((row, idx) => (
-                            <div key={row.label} className="grid grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px] px-3 py-1.5">
+                            <div key={row.label} className={`grid ${showElevations ? "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px_92px]" : "grid-cols-[52px_minmax(90px,1fr)_minmax(90px,1fr)_82px]"} px-3 py-1.5`}>
                               <div>{row.label}</div>
                               <div>{row.x}</div>
                               <div>{row.y}</div>
                               <div>{row.side || "—"}</div>
+                              {showElevations ? <div>{Number.isFinite(elevationRows[idx]?.z) ? elevationRows[idx].z.toFixed(3) : "—"}</div> : null}
                             </div>
                           ))}
                         </div>
@@ -908,6 +1019,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                       <div className="rounded-lg border border-border px-3 py-2 text-center text-sm font-medium">
                         {`ΕΜΒΑΔΟΝ ΟΙΚΟΠΕΔΟΥ (${coordinateLoopLabel || "-"}): Ε=${parcel.area?.toFixed(2) || "-"} Τ.Μ.`}
                       </div>
+                      {showElevations ? (
+                        <div className="text-[11px] text-muted-foreground">Τα υψόμετρα προβάλλονται ενδεικτικά από elevation service.</div>
+                      ) : null}
                     </Panel>
                   ) : null}
 

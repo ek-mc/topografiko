@@ -1541,6 +1541,7 @@ export function toDXF(
     nearbyAnnotations?: NearbyPlanningAnnotation[];
     urbanLines?: Point[][];
     buildingLines?: Point[][];
+    vertexElevations?: { label: string; z: number }[];
     parcelHorizontalAlignment?: ParcelHorizontalAlignment;
   },
 ) {
@@ -1677,6 +1678,7 @@ export function toDXF(
   const coordinateRows = meta?.coords?.length
     ? meta.coords
     : formatCoordinateRows(parcels[0].rings[0], "P");
+  const elevationByLabel = new Map((meta?.vertexElevations || []).map((row) => [row.label, row.z]));
   const coordinateTitle = "ΣΥΝΤ/ΜΕΝΕΣ ΚΟΡΥΦΩΝ ΟΙΚΟΠΕΔΟΥ ΕΓΣΑ'87";
   const coordinateLoopLabel = buildCoordinateLoopLabel(coordinateRows);
   const legendWidth = mm(82);
@@ -2001,7 +2003,9 @@ export function toDXF(
       y: vertex.y + ((vertex.y - parcelCenter.y) / radialLength) * mm(2.2),
     };
     addDxfCircle(writer, vertex, mm(0.5), { layerName: "PARCEL_LABELS", colorNumber: 7 });
-    addCenteredDxfText(writer, vertexLabelPoint.x, vertexLabelPoint.y, mm(1.45), edge.vertexLabel, { layerName: "PARCEL_LABELS", colorNumber: 7 });
+    const z = elevationByLabel.get(edge.vertexLabel);
+    const vertexText = Number.isFinite(z) ? `${edge.vertexLabel} (+${Number(z).toFixed(2)})` : edge.vertexLabel;
+    addCenteredDxfText(writer, vertexLabelPoint.x, vertexLabelPoint.y, mm(1.45), vertexText, { layerName: "PARCEL_LABELS", colorNumber: 7 });
     addCenteredDxfText(writer, labelPoint.x, labelPoint.y, mm(1.28), `${edge.edgeLabel}=${formatLengthMeters(edge.length)}`, {
       rotation: edgeAngleDegrees(start, end),
       layerName: "PARCEL_LABELS",
