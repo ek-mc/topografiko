@@ -1061,11 +1061,11 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           {activeDeclarationRows.length ? (
                             <div className="space-y-5 border-t border-border pt-4">
                               {activeDeclarationRows.map((row) => (
-                                <div key={row.key} className="space-y-3 border-b border-border/60 pb-5 last:border-b-0 last:pb-1">
+                                <div key={row.key} className="space-y-4 border-b border-border/60 pb-8 last:border-b-0 last:pb-2">
                                   <div className="font-semibold text-foreground">{row.title}</div>
-                                  <div className="leading-6 text-muted-foreground">{row.text}</div>
-                                  <div className="pt-4 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/85">{row.signerLabel}</div>
-                                  <div className="h-10" />
+                                  <div className="leading-7 text-muted-foreground">{row.text}</div>
+                                  <div className="pt-6 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/85">{row.signerLabel}</div>
+                                  <div className="h-24" />
                                 </div>
                               ))}
                             </div>

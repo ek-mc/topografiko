@@ -1143,11 +1143,13 @@ export function formatCoordinateRows(points: Point[], prefix: "T" | "P" = "T", c
   return usable.map((point, index) => {
     const [x, y] = coordinatesAreGgrs87 ? [point.x, point.y] : transformToGGRS87(point.x, point.y);
     const next = usable[(index + 1) % usable.length];
+    const currentLabel = prefix === "T" ? `T${index + 1}` : greekLabel(index);
+    const nextLabel = prefix === "T" ? `T${((index + 1) % usable.length) + 1}` : greekLabel((index + 1) % usable.length);
     return {
-      label: prefix === "T" ? `T${index + 1}` : greekLabel(index),
+      label: currentLabel,
       x: x.toFixed(3),
       y: y.toFixed(3),
-      side: next ? segmentLength(point, next).toFixed(2) : "",
+      side: next ? `${currentLabel}${nextLabel}=${segmentLength(point, next).toFixed(2)}` : "",
     };
   });
 }
@@ -1531,8 +1533,7 @@ export function toDXF(
   const referencePoints = fitPoints.length
     ? fitPoints
     : rotatedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
-  const nearbyFitPoints = rotatedNearbyAnnotations.map((item) => item.point);
-  const fitBounds = boundsFromPoints(referencePoints.length ? [...referencePoints, ...nearbyFitPoints] : [...mainParcelPoints, ...nearbyFitPoints]);
+  const fitBounds = boundsFromPoints(referencePoints.length ? referencePoints : mainParcelPoints);
   const fitCenterX = (fitBounds.minX + fitBounds.maxX) / 2;
   const fitCenterY = (fitBounds.minY + fitBounds.maxY) / 2;
   const worldSpanX = Math.max(fitBounds.maxX - fitBounds.minX, 1);
@@ -1753,8 +1754,6 @@ export function toDXF(
           item.point,
           { x: item.point.x + normal.x * mm(6), y: item.point.y + normal.y * mm(6) },
           { x: item.point.x - normal.x * mm(6), y: item.point.y - normal.y * mm(6) },
-          { x: item.point.x + tangent.x * mm(8), y: item.point.y + tangent.y * mm(8) },
-          { x: item.point.x - tangent.x * mm(8), y: item.point.y - tangent.y * mm(8) },
         ]
       : [
           item.point,
@@ -1778,7 +1777,11 @@ export function toDXF(
     }
 
     const fallbackRect = buildNearbyTextRect(item.point, item.label, height);
-    if (insideDrawWindow(fallbackRect) && !overlapsLegend(fallbackRect)) {
+    if (
+      insideDrawWindow(fallbackRect)
+      && !overlapsLegend(fallbackRect)
+      && (item.kind === "pedestrian-road" || !occupiedNearbyRects.some((blocked) => rectsOverlap(fallbackRect, blocked)))
+    ) {
       occupiedNearbyRects.push(fallbackRect);
       return [{ ...item, height, point: item.point }];
     }
@@ -2216,10 +2219,10 @@ export function toDXF(
           addDxfText(writer, labelX, y, mm(1.14), line, { layerName: "ANNOTATION" });
           y -= mm(3.05);
         });
-        y -= mm(3.6);
-        if (declaration.signerLabel && y > contentBottomLimit + mm(10)) {
-          addDxfText(writer, x1 - mm(28), y, mm(1.18), declaration.signerLabel, { layerName: "ANNOTATION" });
-          y -= mm(10.5);
+        y -= mm(4.6);
+        if (declaration.signerLabel && y > contentBottomLimit + mm(16)) {
+          addDxfText(writer, x1 - mm(30), y, mm(1.18), declaration.signerLabel, { layerName: "ANNOTATION" });
+          y -= mm(17.5);
         }
       });
     }
