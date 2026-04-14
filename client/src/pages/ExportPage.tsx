@@ -20,6 +20,7 @@ import {
   fetchParcelsInOT,
   fetchTEECandidates,
   filterAdjacentParcels,
+  filterOppositeParcels,
   formatCoordinateRows,
   getParcelHorizontalRotationDegrees,
   NeighborParcel,
@@ -239,17 +240,12 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         setTeeData(tee);
         setLoading(false);
 
-        if (tee?.rings?.length) {
-          void fetchPlanningLinesForOT(tee.rings).then((lines) => {
-            if (cancelled) return;
-            setUrbanLines(lines.urbanLines);
-            setBuildingLines(lines.buildingLines);
-          }).catch(() => {
-            if (cancelled) return;
-            setUrbanLines([]);
-            setBuildingLines([]);
-          });
-        }
+        const planningLines = tee?.rings?.length
+          ? await fetchPlanningLinesForOT(tee.rings).catch(() => ({ urbanLines: [], buildingLines: [] }))
+          : { urbanLines: [], buildingLines: [] };
+        if (cancelled) return;
+        setUrbanLines(planningLines.urbanLines);
+        setBuildingLines(planningLines.buildingLines);
 
         void termsPromise.then((terms) => {
           if (cancelled) return;
@@ -291,16 +287,21 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         );
         if (cancelled) return;
 
-        const opposite = surroundingParcelGroups
+        const surroundingCandidates = surroundingParcelGroups
           .flat()
           .filter(isDisplayableParcel)
           .filter((item) => item.kaek !== result.kaek && !adjacentKaeks.has(item.kaek))
           .reduce<NeighborParcel[]>((acc, item) => {
             if (!acc.some((existing) => existing.kaek === item.kaek)) {
-              acc.push({ ...item, relation: "opposite" });
+              acc.push(item);
             }
             return acc;
           }, []);
+
+        const opposite = filterOppositeParcels(result.rings, surroundingCandidates, planningLines.urbanLines).map((item) => ({
+          ...item,
+          relation: "opposite" as const,
+        }));
 
         setOtParcels(adjacent);
         setContextParcels(opposite);
@@ -726,7 +727,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         })}
                         {previewParcels.filter((item) => !item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
-                          const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
                           return (
                             <g key={`adj-${item.kaek}`}>
                               <path
@@ -736,15 +736,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                                 strokeWidth="1"
                                 strokeDasharray="5 3"
                               />
-                              <text
-                                x={center.x}
-                                y={center.y + 3}
-                                fontSize="6"
-                                textAnchor="middle"
-                                fill={isDark ? "#e2e8f0" : "#475569"}
-                              >
-                                {item.kaek}
-                              </text>
                             </g>
                           );
                         })}

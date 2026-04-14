@@ -715,6 +715,69 @@ export function filterAdjacentParcels(baseRings: Point[][], parcels: NeighborPar
   return parcels.filter((parcel) => parcel.rings.some((ring) => ringsAreAdjacent(baseRing, ring, toleranceMeters)));
 }
 
+function segmentAngleDegreesRaw(a: Point, b: Point) {
+  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+}
+
+function angleDifferenceDegrees(a: number, b: number) {
+  const normalized = Math.abs((((a - b) % 180) + 180) % 180);
+  return Math.min(normalized, 180 - normalized);
+}
+
+export function filterOppositeParcels(
+  baseRings: Point[][],
+  parcels: NeighborParcel[],
+  urbanLines: Point[][],
+  options?: { minGapMeters?: number; maxGapMeters?: number; urbanToleranceMeters?: number; angleToleranceDegrees?: number },
+) {
+  const baseRing = baseRings[0];
+  if (!baseRing?.length || !parcels.length || !urbanLines.length) return [] as NeighborParcel[];
+
+  const minGapMeters = options?.minGapMeters ?? 1.5;
+  const maxGapMeters = options?.maxGapMeters ?? 35;
+  const urbanToleranceMeters = options?.urbanToleranceMeters ?? 18;
+  const angleToleranceDegrees = options?.angleToleranceDegrees ?? 16;
+
+  const projectedBase = projectedRing(baseRing);
+  const baseSegments = ringSegments(projectedBase);
+  const urbanSegments = urbanLines.flatMap((path) => ringSegments(path.map((point) => {
+    const [x, y] = transformToGGRS87(point.x, point.y);
+    return { x, y };
+  })));
+  if (!baseSegments.length || !urbanSegments.length) return [] as NeighborParcel[];
+
+  const roadFacingBaseSegments = baseSegments.filter(([baseStart, baseEnd]) => {
+    const baseAngle = segmentAngleDegreesRaw(baseStart, baseEnd);
+    return urbanSegments.some(([urbanStart, urbanEnd]) => {
+      const urbanAngle = segmentAngleDegreesRaw(urbanStart, urbanEnd);
+      if (angleDifferenceDegrees(baseAngle, urbanAngle) > angleToleranceDegrees) return false;
+      const gap = segmentDistance(baseStart, baseEnd, urbanStart, urbanEnd);
+      return gap <= urbanToleranceMeters;
+    });
+  });
+  if (!roadFacingBaseSegments.length) return [] as NeighborParcel[];
+
+  return parcels.filter((parcel) => parcel.rings.some((ring) => {
+    const projectedParcel = projectedRing(ring);
+    const parcelSegments = ringSegments(projectedParcel);
+    return parcelSegments.some(([parcelStart, parcelEnd]) => {
+      const parcelAngle = segmentAngleDegreesRaw(parcelStart, parcelEnd);
+      return roadFacingBaseSegments.some(([baseStart, baseEnd]) => {
+        const baseAngle = segmentAngleDegreesRaw(baseStart, baseEnd);
+        if (angleDifferenceDegrees(baseAngle, parcelAngle) > angleToleranceDegrees) return false;
+        const gap = segmentDistance(baseStart, baseEnd, parcelStart, parcelEnd);
+        if (gap < minGapMeters || gap > maxGapMeters) return false;
+        return urbanSegments.some(([urbanStart, urbanEnd]) => {
+          const urbanAngle = segmentAngleDegreesRaw(urbanStart, urbanEnd);
+          if (angleDifferenceDegrees(baseAngle, urbanAngle) > angleToleranceDegrees) return false;
+          return segmentDistance(baseStart, baseEnd, urbanStart, urbanEnd) <= urbanToleranceMeters &&
+            segmentDistance(parcelStart, parcelEnd, urbanStart, urbanEnd) <= urbanToleranceMeters;
+        });
+      });
+    });
+  }));
+}
+
 export function downloadText(filename: string, content: string, mime = "text/plain;charset=utf-8", addBom = false) {
   const payload = addBom ? `\ufeff${content}` : content;
   const blob = new Blob([payload], { type: mime });
@@ -1349,13 +1412,6 @@ export function toDXF(
         colorNumber: 8,
       });
     });
-    const labelPoint = toSheet(centroidOfRing(parcel.rings[0] || []));
-    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
-      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), mm(1.2), parcel.kaek, {
-        layerName: "ANNOTATION",
-        colorNumber: 8,
-      });
-    }
   });
 
   const mainSheetPoints = mainParcelPoints.map(toSheet);
