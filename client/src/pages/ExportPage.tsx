@@ -14,6 +14,7 @@ import {
   downloadText,
   fetchBuildingTerms,
   fetchContextOTs,
+  fetchNearbyPlanningAnnotations,
   fetchOfficialRoadLabels,
   fetchParcelByKaek,
   fetchPlanningLinesForOT,
@@ -23,6 +24,7 @@ import {
   filterOppositeParcels,
   formatCoordinateRows,
   getParcelHorizontalRotationDegrees,
+  NearbyPlanningAnnotation,
   NeighborParcel,
   ParcelData,
   ParcelHorizontalAlignment,
@@ -156,6 +158,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [contextParcels, setContextParcels] = useState<NeighborParcel[]>([]);
   const [contextOts, setContextOts] = useState<TEEData[]>([]);
   const [officialRoadNames, setOfficialRoadNames] = useState<string[]>([]);
+  const [nearbyAnnotations, setNearbyAnnotations] = useState<NearbyPlanningAnnotation[]>([]);
   const [urbanLines, setUrbanLines] = useState<Point[][]>([]);
   const [buildingLines, setBuildingLines] = useState<Point[][]>([]);
   const [loading, setLoading] = useState(false);
@@ -214,6 +217,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       setContextParcels([]);
       setContextOts([]);
       setOfficialRoadNames([]);
+      setNearbyAnnotations([]);
       setUrbanLines([]);
       setBuildingLines([]);
 
@@ -231,6 +235,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         const termsPromise = fetchBuildingTerms(result.rings).catch(() => null);
         const roadLabelsPromise = result.officialRingsGgrs87?.length
           ? fetchOfficialRoadLabels(result.officialRingsGgrs87).catch(() => [])
+          : Promise.resolve([]);
+        const nearbyAnnotationsPromise = result.officialRingsGgrs87?.length
+          ? fetchNearbyPlanningAnnotations(result.officialRingsGgrs87).catch(() => [])
           : Promise.resolve([]);
 
         const candidates = await candidatesPromise;
@@ -255,6 +262,11 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
         void roadLabelsPromise.then((roadLabels) => {
           if (cancelled) return;
           setOfficialRoadNames(Array.from(new Set(roadLabels.map((item) => item.name))).slice(0, 3));
+        });
+
+        void nearbyAnnotationsPromise.then((items) => {
+          if (cancelled) return;
+          setNearbyAnnotations(items);
         });
 
         if (!tee?.rings?.length) {
@@ -385,6 +397,14 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     }));
   }, [contextOts, previewRotationCenter, previewRotationDegrees]);
 
+  const previewNearbyAnnotations = useMemo(() => {
+    if (!previewRotationCenter || !previewRotationDegrees) return nearbyAnnotations;
+    return nearbyAnnotations.map((item) => ({
+      ...item,
+      point: rotateRings([[item.point]], previewRotationCenter, previewRotationDegrees)[0][0],
+    }));
+  }, [nearbyAnnotations, previewRotationCenter, previewRotationDegrees]);
+
   const previewBounds = useMemo(() => {
     const points = [
       ...previewParcels,
@@ -506,6 +526,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           area: parcel.area,
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
+          nearbyAnnotations,
           paperSize,
           scaleDenominator,
           parcelHorizontalAlignment,
@@ -749,6 +770,23 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                             </g>
                           );
                         })}
+                        {previewNearbyAnnotations.map((item, index) => {
+                          if (!previewBounds) return null;
+                          const p = projectPoint(item.point, previewBounds, previewSize, previewPad);
+                          return (
+                            <text
+                              key={`nearby-${item.kind}-${item.label}-${index}`}
+                              x={p.x}
+                              y={p.y}
+                              fontSize={item.kind === "pedestrian-road" ? 4.2 : 3.8}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fill={item.kind === "pedestrian-road" ? (isDark ? "#fde047" : "#a16207") : (isDark ? "#86efac" : "#166534")}
+                            >
+                              {item.label}
+                            </text>
+                          );
+                        })}
                         {previewParcels.filter((item) => item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
                           const c = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
@@ -923,6 +961,11 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               </Fragment>
                             ))}
                           </div>
+                          {nearbyAnnotations.length ? (
+                            <div className="rounded-lg border border-border/70 bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground">
+                              {`Πλησίον: ${Array.from(new Set(nearbyAnnotations.map((item) => item.label))).slice(0, 4).join(", ")}`}
+                            </div>
+                          ) : null}
                           {buildingTerms.notes.length ? (
                             <div className="space-y-1.5 border-t border-border pt-2 text-muted-foreground">
                               {buildingTerms.notes.map((note, index) => (

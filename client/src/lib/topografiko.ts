@@ -66,6 +66,15 @@ export type OfficialRoadLabel = {
   distanceToParcel: number;
 };
 
+export type NearbyPlanningAnnotation = {
+  kind: "pedestrian-road" | "public-use";
+  label: string;
+  point: Point;
+  sourceFek?: string;
+  relation?: "intersects" | "nearby";
+  distanceToParcel?: number;
+};
+
 export type NeighborParcel = {
   kaek: string;
   mainUse: string;
@@ -357,6 +366,107 @@ export async function fetchOfficialRoadLabels(ringsGgrs87: Point[][]): Promise<O
       });
   } catch (error) {
     console.warn("Official road label lookup failed; continuing without road labels.", error);
+    return [];
+  }
+}
+
+function cleanNearbyPlanningLabel(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  const upper = normalized.toUpperCase();
+  if (!normalized) return "";
+  if (/^Κ\.?\s*Π\.?$/.test(upper)) return "Κ.Π.";
+  if (upper.includes("ΠΕΖΟΔΡΟΜ")) return "ΠΕΖΟΔΡΟΜΟΣ";
+  if (upper.includes("ΣΧΟΛΕΙ")) return "ΧΩΡΟΣ ΣΧΟΛΕΙΟΥ";
+  if (upper.includes("ΑΘΛΗΤΙΚ")) return "ΑΘΛΗΤΙΚΕΣ ΕΓΚΑΤΑΣΤΑΣΕΙΣ";
+  if (upper.includes("ΠΑΡΚ") || upper.includes("ΠΡΑΣΙΝ")) return "ΧΩΡΟΣ ΠΡΑΣΙΝΟΥ";
+  return normalized.length > 42 ? `${normalized.slice(0, 39).trimEnd()}…` : normalized;
+}
+
+function pointInBounds(point: Point, bounds: { minX: number; minY: number; maxX: number; maxY: number }) {
+  return point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY;
+}
+
+async function queryArcGisLayerByGeometry(layerId: number, ringsGgrs87: Point[][], distance = 220) {
+  const geometry = {
+    rings: ringsGgrs87.map((ring) => stripClosingPoint(ring).map((point) => [point.x, point.y])),
+    spatialReference: { wkid: 2100 },
+  };
+  const params = new URLSearchParams({
+    f: "json",
+    geometry: JSON.stringify(geometry),
+    geometryType: "esriGeometryPolygon",
+    inSR: "2100",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: "*",
+    returnGeometry: "true",
+    outSR: "2100",
+    distance: String(distance),
+    units: "esriSRUnit_Meter",
+  });
+  const response = await fetch(`https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/${layerId}/query?${params.toString()}`);
+  if (!response.ok) throw new Error(`Layer ${layerId} query failed with status ${response.status}`);
+  const payload = await response.json();
+  return Array.isArray(payload?.features) ? payload.features : [];
+}
+
+export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Promise<NearbyPlanningAnnotation[]> {
+  const usableRings = ringsGgrs87.map((ring) => stripClosingPoint(ring)).filter((ring) => ring.length >= 3);
+  if (!usableRings.length) return [];
+
+  const bounds = boundsFromPoints(usableRings.flat());
+  const expandedBounds = {
+    minX: bounds.minX - 260,
+    minY: bounds.minY - 260,
+    maxX: bounds.maxX + 260,
+    maxY: bounds.maxY + 260,
+  };
+
+  try {
+    const [pedestrianFeatures, publicUseFeatures] = await Promise.all([
+      queryArcGisLayerByGeometry(8, usableRings).catch(() => []),
+      queryArcGisLayerByGeometry(22, usableRings).catch(() => []),
+    ]);
+
+    const seen = new Set<string>();
+    const annotations: NearbyPlanningAnnotation[] = [];
+
+    pedestrianFeatures.forEach((feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }) => {
+      const attrs = feature?.attributes || {};
+      const ring = Array.isArray(feature?.geometry?.rings?.[0])
+        ? feature.geometry.rings[0].map((point: number[]) => ({ x: Number(point[0]), y: Number(point[1]) }))
+        : [];
+      const usable = stripClosingPoint(ring);
+      const center = usable.length ? centroidOfRing(usable) : null;
+      const label = cleanNearbyPlanningLabel(readString(attrs.PZ_XRHSH) || "ΠΕΖΟΔΡΟΜΟΣ");
+      if (!center || !label || !pointInBounds(center, expandedBounds)) return;
+      const distanceToParcel = distancePointToRings(center, usableRings);
+      const key = `pedestrian-road::${Math.round(center.x)}::${Math.round(center.y)}::${label}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      annotations.push({ kind: "pedestrian-road", label, point: center, sourceFek: readString(attrs.FEK), relation: distanceToParcel <= 25 ? "intersects" : "nearby", distanceToParcel });
+    });
+
+    publicUseFeatures.forEach((feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }) => {
+      const attrs = feature?.attributes || {};
+      const ring = Array.isArray(feature?.geometry?.rings?.[0])
+        ? feature.geometry.rings[0].map((point: number[]) => ({ x: Number(point[0]), y: Number(point[1]) }))
+        : [];
+      const usable = stripClosingPoint(ring);
+      const center = usable.length ? centroidOfRing(usable) : null;
+      const label = cleanNearbyPlanningLabel(readString(attrs.EID_XRHSH_TXT) || readString(attrs.TITLE));
+      if (!center || !label || !pointInBounds(center, expandedBounds)) return;
+      const distanceToParcel = distancePointToRings(center, usableRings);
+      const key = `public-use::${Math.round(center.x)}::${Math.round(center.y)}::${label}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      annotations.push({ kind: "public-use", label, point: center, sourceFek: readString(attrs.FEK), relation: distanceToParcel <= 25 ? "intersects" : "nearby", distanceToParcel });
+    });
+
+    return annotations
+      .sort((a, b) => (a.distanceToParcel ?? Number.POSITIVE_INFINITY) - (b.distanceToParcel ?? Number.POSITIVE_INFINITY) || a.label.localeCompare(b.label, "el"))
+      .slice(0, 8);
+  } catch (error) {
+    console.warn("Nearby planning annotation lookup failed; continuing without nearby labels.", error);
     return [];
   }
 }
@@ -1180,6 +1290,7 @@ export function toDXF(
     otRings?: Point[][];
     contextOts?: TEEData[];
     buildingTerms?: BuildingTermsData | null;
+    nearbyAnnotations?: NearbyPlanningAnnotation[];
     urbanLines?: Point[][];
     buildingLines?: Point[][];
     vertexElevations?: { label: string; z: number }[];
@@ -1242,6 +1353,12 @@ export function toDXF(
     const [x, y] = transformToGGRS87(p.x, p.y);
     return { x, y };
   }));
+  const projectedNearbyAnnotations = (meta?.nearbyAnnotations || []).map((item) => {
+    const isLikelyGgrs = Math.abs(item.point.x) > 1000 && Math.abs(item.point.y) > 1000;
+    if (isLikelyGgrs) return { ...item, point: item.point };
+    const [x, y] = transformToGGRS87(item.point.x, item.point.y);
+    return { ...item, point: { x, y } };
+  });
 
   const parcelHorizontalAlignment = meta?.parcelHorizontalAlignment || "default";
   const mainProjectedParcelPoints = stripClosingPoint(projectedParcels[0]?.rings[0] || []);
@@ -1256,6 +1373,9 @@ export function toDXF(
     : projectedContextOts;
   const rotatedUrbanLines = parcelRotationDegrees ? rotateRings(projectedUrbanLines, rotationCenter, parcelRotationDegrees) : projectedUrbanLines;
   const rotatedBuildingLines = parcelRotationDegrees ? rotateRings(projectedBuildingLines, rotationCenter, parcelRotationDegrees) : projectedBuildingLines;
+  const rotatedNearbyAnnotations = parcelRotationDegrees
+    ? projectedNearbyAnnotations.map((item) => ({ ...item, point: rotatePoint(item.point, rotationCenter, parcelRotationDegrees) }))
+    : projectedNearbyAnnotations;
 
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
@@ -1318,6 +1438,9 @@ export function toDXF(
   const legendX = drawWin.x1 - legendWidth - mm(1.5);
   const legendY = drawWin.y0 + mm(1.5);
   const clipRect = { minX: drawWin.x0, minY: drawWin.y0, maxX: drawWin.x1, maxY: drawWin.y1 };
+  const sheetNearbyAnnotations = rotatedNearbyAnnotations
+    .map((item) => ({ ...item, point: toSheet(item.point) }))
+    .filter((item) => item.point.x >= drawWin.x0 && item.point.x <= drawWin.x1 && item.point.y >= drawWin.y0 && item.point.y <= drawWin.y1);
   const legendMaskRect = {
     minX: legendX - mm(1.4),
     minY: legendY - mm(1.4),
@@ -1456,6 +1579,14 @@ export function toDXF(
   });
   const mainLabelPoint = toSheet(centroidOfRing(mainParcel.rings[0]));
   addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mm(1.8), mainParcel.kaek, { layerName: "ANNOTATION" });
+
+  sheetNearbyAnnotations.forEach((item) => {
+    const height = item.kind === "pedestrian-road" ? mm(1.55) : mm(1.4);
+    addCenteredDxfText(writer, item.point.x, item.point.y, height, item.label, {
+      layerName: "ANNOTATION",
+      colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
+    });
+  });
 
   const parcelSheetPoints = mainParcelPoints.map(toSheet);
   const parcelCenter = centroidOfRing(parcelSheetPoints);
@@ -1842,6 +1973,16 @@ export function toDXF(
         addDxfText(writer, valueX, y, mm(1.48), value, { layerName: "ANNOTATION" });
         y -= mm(4.1);
       });
+
+      const contextualLabels = Array.from(new Set((meta?.nearbyAnnotations || []).map((item) => item.label))).slice(0, 4);
+      if (contextualLabels.length) {
+        y -= mm(0.8);
+        wrapTextByWidth(`Πλησίον: ${contextualLabels.join(", ")}`, x1 - labelX - mm(4), mm(1.22)).forEach((line) => {
+          if (y <= contentBottomLimit) return;
+          addDxfText(writer, labelX, y, mm(1.22), line, { layerName: "ANNOTATION" });
+          y -= mm(3.2);
+        });
+      }
 
       const sourceParts = [terms.sourceFek, terms.sourceDecisionNumber, terms.sourceDate].filter(Boolean).join(" | ");
       if (sourceParts) {
