@@ -854,11 +854,65 @@ function formatAreaForPlan(area: number | null | undefined) {
   return area.toFixed(2);
 }
 
+export type ParcelHorizontalAlignment = "default" | "north-side-horizontal" | "south-side-horizontal";
+
+function normalizeHorizontalRotation(degrees: number) {
+  let normalized = degrees;
+  while (normalized > 90) normalized -= 180;
+  while (normalized < -90) normalized += 180;
+  return normalized;
+}
+
 function edgeAngleDegrees(a: Point, b: Point) {
-  let degrees = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-  if (degrees > 90) degrees -= 180;
-  if (degrees < -90) degrees += 180;
-  return degrees;
+  return normalizeHorizontalRotation((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI);
+}
+
+export function rotatePoint(point: Point, center: Point, rotationDegrees: number): Point {
+  if (!rotationDegrees) return { ...point };
+  const radians = (rotationDegrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos,
+  };
+}
+
+export function rotateRings(rings: Point[][], center: Point, rotationDegrees: number) {
+  if (!rotationDegrees) return rings.map((ring) => ring.map((point) => ({ ...point })));
+  return rings.map((ring) => ring.map((point) => rotatePoint(point, center, rotationDegrees)));
+}
+
+export function getParcelHorizontalRotationDegrees(points: Point[], alignment: ParcelHorizontalAlignment): number {
+  if (alignment === "default") return 0;
+  const usable = stripClosingPoint(points);
+  if (usable.length < 2) return 0;
+
+  let bestEdge: { start: Point; end: Point; midpointY: number; length: number } | null = null;
+  for (let index = 0; index < usable.length; index += 1) {
+    const start = usable[index];
+    const end = usable[(index + 1) % usable.length];
+    const midpointY = (start.y + end.y) / 2;
+    const length = segmentLength(start, end);
+    if (!bestEdge) {
+      bestEdge = { start, end, midpointY, length };
+      continue;
+    }
+
+    const betterByPosition = alignment === "north-side-horizontal"
+      ? midpointY > bestEdge.midpointY + 1e-9
+      : midpointY < bestEdge.midpointY - 1e-9;
+    const tiedByPosition = Math.abs(midpointY - bestEdge.midpointY) <= 1e-9;
+    if (betterByPosition || (tiedByPosition && length > bestEdge.length)) {
+      bestEdge = { start, end, midpointY, length };
+    }
+  }
+
+  if (!bestEdge) return 0;
+  const edgeAngle = (Math.atan2(bestEdge.end.y - bestEdge.start.y, bestEdge.end.x - bestEdge.start.x) * 180) / Math.PI;
+  return normalizeHorizontalRotation(-edgeAngle);
 }
 
 function estimateTextWidth(value: string, height: number) {
@@ -1038,6 +1092,7 @@ export function toDXF(
     urbanLines?: Point[][];
     buildingLines?: Point[][];
     vertexElevations?: { label: string; z: number }[];
+    parcelHorizontalAlignment?: ParcelHorizontalAlignment;
   },
 ) {
   const writer = new DxfWriter();
@@ -1097,6 +1152,20 @@ export function toDXF(
     return { x, y };
   }));
 
+  const parcelHorizontalAlignment = meta?.parcelHorizontalAlignment || "default";
+  const mainProjectedParcelPoints = stripClosingPoint(projectedParcels[0]?.rings[0] || []);
+  const rotationCenter = centroidOfRing(mainProjectedParcelPoints);
+  const parcelRotationDegrees = getParcelHorizontalRotationDegrees(mainProjectedParcelPoints, parcelHorizontalAlignment);
+  const rotatedParcels = parcelRotationDegrees
+    ? projectedParcels.map((parcel) => ({ ...parcel, rings: rotateRings(parcel.rings, rotationCenter, parcelRotationDegrees) }))
+    : projectedParcels;
+  const rotatedOtRings = parcelRotationDegrees ? rotateRings(projectedOtRings, rotationCenter, parcelRotationDegrees) : projectedOtRings;
+  const rotatedContextOts = parcelRotationDegrees
+    ? projectedContextOts.map((ot) => ({ ...ot, rings: rotateRings(ot.rings, rotationCenter, parcelRotationDegrees) }))
+    : projectedContextOts;
+  const rotatedUrbanLines = parcelRotationDegrees ? rotateRings(projectedUrbanLines, rotationCenter, parcelRotationDegrees) : projectedUrbanLines;
+  const rotatedBuildingLines = parcelRotationDegrees ? rotateRings(projectedBuildingLines, rotationCenter, parcelRotationDegrees) : projectedBuildingLines;
+
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
   const includeTitleBlock = Boolean(meta?.includeTitleBlock);
@@ -1116,14 +1185,14 @@ export function toDXF(
     y1: paper.height - paperConfig.outerMargin - mm(paperConfig.frameGap),
   };
 
-  const mainParcel = projectedParcels[0];
+  const mainParcel = rotatedParcels[0];
   const mainParcelPoints = stripClosingPoint(mainParcel.rings[0]);
   if (!mainParcelPoints.length) return writer.stringify();
 
-  const fitPoints = projectedOtRings.flatMap((ring) => stripClosingPoint(ring));
+  const fitPoints = rotatedOtRings.flatMap((ring) => stripClosingPoint(ring));
   const referencePoints = fitPoints.length
     ? fitPoints
-    : projectedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
+    : rotatedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
   const fitBounds = boundsFromPoints(referencePoints.length ? referencePoints : mainParcelPoints);
   const fitCenterX = (fitBounds.minX + fitBounds.maxX) / 2;
   const fitCenterY = (fitBounds.minY + fitBounds.maxY) / 2;
@@ -1205,7 +1274,7 @@ export function toDXF(
     addDxfText(writer, drawWin.x0 - mm(9.4), sy - mm(0.55), gridLabelHeight, String(Math.round(worldY)), { layerName: "ANNOTATION" });
   }
 
-  projectedContextOts.forEach((ot) => {
+  rotatedContextOts.forEach((ot) => {
     ot.rings.forEach((ring) => {
       const worldPts = stripClosingPoint(ring);
       worldPts.forEach((start, index) => {
@@ -1224,7 +1293,7 @@ export function toDXF(
     });
   });
 
-  const urbanSegments = projectedUrbanLines.flatMap((path) => {
+  const urbanSegments = rotatedUrbanLines.flatMap((path) => {
     const pts = stripClosingPoint(path);
     if (pts.length < 2) return [] as Array<{ start: Point; end: Point }>;
     return pts.slice(0, -1).map((start, index) => ({ start, end: pts[index + 1] }));
@@ -1245,7 +1314,7 @@ export function toDXF(
     });
   };
 
-  projectedUrbanLines.forEach((path) => {
+  rotatedUrbanLines.forEach((path) => {
     const pts = stripClosingPoint(path);
     if (pts.length < 2) return;
     const sheetPoints = pts.map(toSheet);
@@ -1256,7 +1325,7 @@ export function toDXF(
     });
   });
 
-  projectedBuildingLines.forEach((path) => {
+  rotatedBuildingLines.forEach((path) => {
     const pts = stripClosingPoint(path);
     if (pts.length < 2) return;
     const sheetPoints = pts.map(toSheet);
@@ -1267,7 +1336,7 @@ export function toDXF(
     });
   });
 
-  projectedParcels.slice(1).forEach((parcel) => {
+  rotatedParcels.slice(1).forEach((parcel) => {
     const pts = stripClosingPoint(parcel.rings[0]);
     if (pts.length < 2) return;
     const sheetPoints = pts.map(toSheet);
@@ -1369,9 +1438,9 @@ export function toDXF(
 
   projectedUrbanLines.forEach((path) => addObstaclePath(path, false));
   projectedBuildingLines.forEach((path) => addObstaclePath(path, false));
-  projectedParcels.forEach((parcel) => parcel.rings.forEach((ring) => addObstaclePath(ring, true)));
-  projectedContextOts.forEach((ot) => ot.rings.forEach((ring) => addObstaclePath(ring, true)));
-  projectedOtRings.forEach((ring) => addObstaclePath(ring, true));
+  rotatedParcels.forEach((parcel) => parcel.rings.forEach((ring) => addObstaclePath(ring, true)));
+  rotatedContextOts.forEach((ot) => ot.rings.forEach((ring) => addObstaclePath(ring, true)));
+  rotatedOtRings.forEach((ring) => addObstaclePath(ring, true));
 
   const drawOtBoxLabel = (text: string, sourceRing: Point[]) => {
     const ringWorld = stripClosingPoint(sourceRing);
@@ -1467,20 +1536,27 @@ export function toDXF(
     addCenteredDxfText(writer, x, y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
   };
 
-  projectedContextOts.forEach((ot) => {
+  rotatedContextOts.forEach((ot) => {
     if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0]);
   });
-  if (meta?.ot && projectedOtRings[0]?.length) {
-    drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, projectedOtRings[0]);
+  if (meta?.ot && rotatedOtRings[0]?.length) {
+    drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, rotatedOtRings[0]);
   }
 
   const northX = drawWin.x0 + mm(16);
   const northY = drawWin.y1 - mm(18);
-  addDxfLine(writer, { x: northX, y: northY - mm(10) }, { x: northX, y: northY + mm(2) }, { layerName: "ANNOTATION" });
-  addDxfLine(writer, { x: northX, y: northY + mm(2) }, { x: northX - mm(4), y: northY - mm(6) }, { layerName: "ANNOTATION" });
-  addDxfLine(writer, { x: northX, y: northY + mm(2) }, { x: northX + mm(4), y: northY - mm(6) }, { layerName: "ANNOTATION" });
-  addDxfLine(writer, { x: northX - mm(4), y: northY - mm(6) }, { x: northX + mm(4), y: northY - mm(6) }, { layerName: "ANNOTATION" });
-  addCenteredDxfText(writer, northX, northY + mm(6), mm(3), "Β", { layerName: "ANNOTATION" });
+  const northCenter = { x: northX, y: northY };
+  const rotateNorthPoint = (point: Point) => rotatePoint(point, northCenter, parcelRotationDegrees);
+  const northStemBottom = rotateNorthPoint({ x: northX, y: northY - mm(10) });
+  const northStemTop = rotateNorthPoint({ x: northX, y: northY + mm(2) });
+  const northLeft = rotateNorthPoint({ x: northX - mm(4), y: northY - mm(6) });
+  const northRight = rotateNorthPoint({ x: northX + mm(4), y: northY - mm(6) });
+  const northLabel = rotateNorthPoint({ x: northX, y: northY + mm(6) });
+  addDxfLine(writer, northStemBottom, northStemTop, { layerName: "ANNOTATION" });
+  addDxfLine(writer, northStemTop, northLeft, { layerName: "ANNOTATION" });
+  addDxfLine(writer, northStemTop, northRight, { layerName: "ANNOTATION" });
+  addDxfLine(writer, northLeft, northRight, { layerName: "ANNOTATION" });
+  addCenteredDxfText(writer, northLabel.x, northLabel.y, mm(3), "Β", { rotation: parcelRotationDegrees, layerName: "ANNOTATION" });
 
   addDxfLine(writer, { x: legendX, y: legendY }, { x: legendX + legendWidth, y: legendY }, { layerName: "ANNOTATION" });
   addDxfLine(writer, { x: legendX + legendWidth, y: legendY }, { x: legendX + legendWidth, y: legendY + legendHeight }, { layerName: "ANNOTATION" });

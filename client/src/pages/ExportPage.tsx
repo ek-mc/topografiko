@@ -21,11 +21,14 @@ import {
   fetchTEECandidates,
   filterAdjacentParcels,
   formatCoordinateRows,
+  getParcelHorizontalRotationDegrees,
   NeighborParcel,
   ParcelData,
+  ParcelHorizontalAlignment,
   pathFromRingWithBounds,
   Point,
   projectPoint,
+  rotateRings,
   stripClosingPoint,
   TEEData,
   toDXF,
@@ -164,6 +167,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showTerms, setShowTerms] = useState(true);
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
+  const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
   const [showElevations, setShowElevations] = useState(false);
   const [elevationsLoading, setElevationsLoading] = useState(false);
   const [elevationRows, setElevationRows] = useState<ElevationRow[]>([]);
@@ -346,16 +350,48 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     ];
   }, [parcel, otParcels, contextParcels, includeOtContext, includeFullContext]);
 
-  const previewParcels = exportParcels;
+  const previewRotationCenter = useMemo(() => {
+    const mainRing = parcel?.rings?.[0];
+    if (!mainRing?.length) return null;
+    return centroidOfRing(stripClosingPoint(mainRing));
+  }, [parcel]);
+
+  const previewRotationDegrees = useMemo(() => {
+    const mainRing = parcel?.rings?.[0];
+    if (!mainRing?.length) return 0;
+    return getParcelHorizontalRotationDegrees(mainRing, parcelHorizontalAlignment);
+  }, [parcel, parcelHorizontalAlignment]);
+
+  const previewParcels = useMemo(() => {
+    if (!previewRotationCenter || !previewRotationDegrees) return exportParcels;
+    return exportParcels.map((item) => ({
+      ...item,
+      rings: rotateRings(item.rings, previewRotationCenter, previewRotationDegrees),
+    }));
+  }, [exportParcels, previewRotationCenter, previewRotationDegrees]);
+
+  const previewOtRings = useMemo(() => {
+    if (!teeData?.rings?.length) return [] as Point[][];
+    if (!previewRotationCenter || !previewRotationDegrees) return teeData.rings;
+    return rotateRings(teeData.rings, previewRotationCenter, previewRotationDegrees);
+  }, [teeData, previewRotationCenter, previewRotationDegrees]);
+
+  const previewContextOts = useMemo(() => {
+    if (!previewRotationCenter || !previewRotationDegrees) return contextOts;
+    return contextOts.map((item) => ({
+      ...item,
+      rings: rotateRings(item.rings, previewRotationCenter, previewRotationDegrees),
+    }));
+  }, [contextOts, previewRotationCenter, previewRotationDegrees]);
 
   const previewBounds = useMemo(() => {
     const points = [
       ...previewParcels,
-      ...(includeOtContext && teeData?.rings?.length ? [{ rings: teeData.rings } as { rings: Point[][] }] : []),
-      ...(includeFullContext ? contextOts.map((item) => ({ rings: item.rings })) : []),
+      ...(includeOtContext && previewOtRings.length ? [{ rings: previewOtRings } as { rings: Point[][] }] : []),
+      ...(includeFullContext ? previewContextOts.map((item) => ({ rings: item.rings })) : []),
     ].flatMap((p) => p.rings.flatMap((ring) => stripClosingPoint(ring)));
     return points.length ? boundsFromPoints(points) : null;
-  }, [previewParcels, teeData, contextOts, includeOtContext, includeFullContext]);
+  }, [previewParcels, previewOtRings, previewContextOts, includeOtContext, includeFullContext]);
 
   const coords = useMemo<CoordinateRow[]>(() => {
     if (parcel?.officialRingsGgrs87?.[0]?.length) {
@@ -471,6 +507,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           coords: showCoords ? coords : undefined,
           paperSize,
           scaleDenominator,
+          parcelHorizontalAlignment,
           otRings: includeOtContext ? teeData?.rings : undefined,
           contextOts: includeFullContext ? contextOts : undefined,
           buildingTerms: showTerms ? buildingTerms : null,
@@ -603,6 +640,19 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 ))}
               </div>
 
+              <label className="inline-flex items-center gap-3 rounded-2xl border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide">Parcel orientation</span>
+                <select
+                  value={parcelHorizontalAlignment}
+                  onChange={(event) => setParcelHorizontalAlignment(event.target.value as ParcelHorizontalAlignment)}
+                  className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors"
+                >
+                  <option value="default">Default</option>
+                  <option value="north-side-horizontal">North side horizontal</option>
+                  <option value="south-side-horizontal">South side horizontal</option>
+                </select>
+              </label>
+
               <div className="ml-auto grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
@@ -636,8 +686,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                       <svg viewBox={`0 0 ${previewSize} ${previewSize}`} className="aspect-square w-full">
                         <rect x="0" y="0" width={previewSize} height={previewSize} fill={isDark ? "#0f172a" : "#f8fafc"} />
                         <rect x="18" y="18" width="284" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
-                        <NorthArrow isDark={isDark} />
-                        {contextOts.map((item, index) => {
+                        <NorthArrow isDark={isDark} rotationDegrees={previewRotationDegrees} />
+                        {previewContextOts.map((item, index) => {
                           const ring = item.rings[0];
                           if (!ring?.length) return null;
                           const center = projectPoint(centroidOfRing(ring), previewBounds, previewSize, previewPad);
@@ -743,7 +793,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           );
                         })}
                         {(() => {
-                          const otRing = teeData?.rings?.[0];
+                          const otRing = previewOtRings[0];
                           if (!otRing) return null;
                           const c = projectPoint(centroidOfRing(otRing), previewBounds, previewSize, previewPad);
                           return (
