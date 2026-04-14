@@ -271,6 +271,51 @@ function distancePointToRings(point: Point, rings: Point[][]) {
   return rings.reduce((minDistance, ring) => Math.min(minDistance, distancePointToRing(point, ring)), Number.POSITIVE_INFINITY);
 }
 
+function moveLinearPlacementInsideRing(point: Point, rotationDegrees: number, ring: Point[], target: Point) {
+  const usable = stripClosingPoint(ring);
+  if (usable.length < 3) return point;
+
+  const radians = (rotationDegrees * Math.PI) / 180;
+  const tangent = { x: Math.cos(radians), y: Math.sin(radians) };
+  const normalA = { x: -tangent.y, y: tangent.x };
+  const normalB = { x: tangent.y, y: -tangent.x };
+  const centroid = centroidOfRing(usable);
+  const directionHint = { x: (target.x + centroid.x) / 2 - point.x, y: (target.y + centroid.y) / 2 - point.y };
+  const probeDistances = [2, 1, 0.5];
+  let preferredNormals = [normalA, normalB];
+
+  for (const probe of probeDistances) {
+    const probeA = { x: point.x + normalA.x * probe, y: point.y + normalA.y * probe };
+    const probeB = { x: point.x + normalB.x * probe, y: point.y + normalB.y * probe };
+    const insideA = pointInRing(probeA, usable);
+    const insideB = pointInRing(probeB, usable);
+    if (insideA && !insideB) {
+      preferredNormals = [normalA, normalB];
+      break;
+    }
+    if (insideB && !insideA) {
+      preferredNormals = [normalB, normalA];
+      break;
+    }
+  }
+
+  if (preferredNormals[0] === normalA && preferredNormals[1] === normalB) {
+    const dotA = normalA.x * directionHint.x + normalA.y * directionHint.y;
+    const dotB = normalB.x * directionHint.x + normalB.y * directionHint.y;
+    preferredNormals = dotA >= dotB ? [normalA, normalB] : [normalB, normalA];
+  }
+
+  const offsets = [4, 2, 1, 0.5, 0.25];
+  for (const offset of offsets) {
+    for (const normal of preferredNormals) {
+      const candidate = { x: point.x + normal.x * offset, y: point.y + normal.y * offset };
+      if (pointInRing(candidate, usable)) return candidate;
+    }
+  }
+
+  return point;
+}
+
 async function loadJsonpValue(url: string, callbackPath: string) {
   if (typeof document === "undefined" || typeof window === "undefined") {
     return "";
@@ -516,8 +561,16 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
       const attrs = feature?.attributes || {};
       const paths = geometryPathsFromFeature(feature);
       const points = paths.flatMap((path) => stripClosingPoint(path));
+      const ringGeometries = (feature.geometry?.rings || [])
+        .map((ring) => ring.map((point) => ({ x: Number(point[0]), y: Number(point[1]) })))
+        .map((ring) => stripClosingPoint(ring))
+        .filter((ring) => ring.length >= 3);
+      const roadFootprint = ringGeometries[0];
       const linearPlacement = selectLinearAnnotationPlacement(paths, expandedBounds, parcelCenter);
-      const center = linearPlacement?.point || selectNearbyAnnotationPoint(points, expandedBounds, parcelCenter);
+      let center = linearPlacement?.point || selectNearbyAnnotationPoint(points, expandedBounds, parcelCenter);
+      if (center && linearPlacement && roadFootprint?.length) {
+        center = moveLinearPlacementInsideRing(center, linearPlacement.rotationDegrees, roadFootprint, parcelCenter);
+      }
       const label = cleanNearbyPlanningLabel(readString(attrs.PZ_XRHSH) || readString(attrs.TITLE) || "ΠΕΖΟΔΡΟΜΟΣ");
       if (!center || !label) return;
       const distanceToParcel = distancePointToRings(center, usableRings);
@@ -530,6 +583,7 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
         label,
         point: center,
         rotationDegrees: linearPlacement?.rotationDegrees,
+        footprint: roadFootprint,
         sourceFek: readString(attrs.FEK),
         relation: distanceToParcel <= 25 ? "intersects" : "nearby",
         distanceToParcel,
@@ -1739,21 +1793,54 @@ export function toDXF(
       maxY: bounds.maxY + mm(4),
     };
   });
-  const occupiedNearbyRects = [...otBlockedRects, legendMaskRect];
+  const hardBlockedNearbyRects = [...otBlockedRects, legendMaskRect];
+  const softOccupiedNearbyRects: Array<{ minX: number; minY: number; maxX: number; maxY: number }> = [];
   const insideDrawWindow = (rect: { minX: number; minY: number; maxX: number; maxY: number }) => (
     rect.minX >= drawWin.x0 && rect.maxX <= drawWin.x1 && rect.minY >= drawWin.y0 && rect.maxY <= drawWin.y1
   );
-  const overlapsLegend = (rect: { minX: number; minY: number; maxX: number; maxY: number }) => rectsOverlap(rect, legendMaskRect);
-  const placedNearbyAnnotations = rawSheetNearbyAnnotations.flatMap((item) => {
+  const buildFootprintBounds = (footprint?: Point[]) => {
+    if (!footprint?.length) return null;
+    return footprint.reduce((bounds, point) => ({
+      minX: Math.min(bounds.minX, point.x),
+      minY: Math.min(bounds.minY, point.y),
+      maxX: Math.max(bounds.maxX, point.x),
+      maxY: Math.max(bounds.maxY, point.y),
+    }), {
+      minX: footprint[0].x,
+      minY: footprint[0].y,
+      maxX: footprint[0].x,
+      maxY: footprint[0].y,
+    });
+  };
+  const nearbyPlacementQueue = [...rawSheetNearbyAnnotations].sort((a, b) => {
+    if (a.kind === b.kind) return 0;
+    return a.kind === "public-use" ? -1 : 1;
+  });
+  const placedNearbyAnnotations = nearbyPlacementQueue.flatMap((item) => {
     const height = item.kind === "pedestrian-road" ? mm(1.55) : mm(1.4);
     const rotationRadians = ((item.rotationDegrees || 0) * Math.PI) / 180;
     const tangent = { x: Math.cos(rotationRadians), y: Math.sin(rotationRadians) };
     const normal = { x: -tangent.y, y: tangent.x };
+    const footprintBounds = buildFootprintBounds(item.footprint);
+    const footprintCandidates = item.kind === "public-use" && footprintBounds
+      ? [
+          { x: footprintBounds.maxX + mm(10), y: (footprintBounds.minY + footprintBounds.maxY) / 2 },
+          { x: footprintBounds.minX - mm(10), y: (footprintBounds.minY + footprintBounds.maxY) / 2 },
+          { x: (footprintBounds.minX + footprintBounds.maxX) / 2, y: footprintBounds.maxY + mm(8) },
+          { x: (footprintBounds.minX + footprintBounds.maxX) / 2, y: footprintBounds.minY - mm(8) },
+          { x: footprintBounds.maxX + mm(12), y: footprintBounds.maxY + mm(6) },
+          { x: footprintBounds.minX - mm(12), y: footprintBounds.maxY + mm(6) },
+          { x: footprintBounds.maxX + mm(12), y: footprintBounds.minY - mm(6) },
+          { x: footprintBounds.minX - mm(12), y: footprintBounds.minY - mm(6) },
+        ]
+      : [];
     const placementCandidates = item.kind === "pedestrian-road"
       ? [
           item.point,
-          { x: item.point.x + normal.x * mm(6), y: item.point.y + normal.y * mm(6) },
-          { x: item.point.x - normal.x * mm(6), y: item.point.y - normal.y * mm(6) },
+          { x: item.point.x + normal.x * mm(4), y: item.point.y + normal.y * mm(4) },
+          { x: item.point.x - normal.x * mm(4), y: item.point.y - normal.y * mm(4) },
+          { x: item.point.x + normal.x * mm(2), y: item.point.y + normal.y * mm(2) },
+          { x: item.point.x - normal.x * mm(2), y: item.point.y - normal.y * mm(2) },
         ]
       : [
           item.point,
@@ -1765,26 +1852,33 @@ export function toDXF(
           { x: item.point.x - mm(10), y: item.point.y + mm(6) },
           { x: item.point.x + mm(10), y: item.point.y - mm(6) },
           { x: item.point.x - mm(10), y: item.point.y - mm(6) },
+          { x: item.point.x + mm(18), y: item.point.y },
+          { x: item.point.x - mm(18), y: item.point.y },
+          { x: item.point.x, y: item.point.y + mm(14) },
+          { x: item.point.x, y: item.point.y - mm(14) },
+          ...footprintCandidates,
         ];
 
-    for (const candidate of placementCandidates) {
-      const rect = buildNearbyTextRect(candidate, item.label, height);
-      if (!insideDrawWindow(rect) || overlapsLegend(rect)) continue;
-      const shouldAvoidBlocked = item.kind !== "pedestrian-road";
-      if (shouldAvoidBlocked && occupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) continue;
-      occupiedNearbyRects.push(rect);
-      return [{ ...item, height, point: candidate }];
+    const tryPlace = (respectSoftBlocked: boolean) => {
+      for (const candidate of placementCandidates) {
+        const rect = buildNearbyTextRect(candidate, item.label, height);
+        if (!insideDrawWindow(rect)) continue;
+        if (hardBlockedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) continue;
+        if (respectSoftBlocked && softOccupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) continue;
+        softOccupiedNearbyRects.push(rect);
+        return { ...item, height, point: candidate };
+      }
+      return null;
+    };
+
+    const strictPlacement = tryPlace(true);
+    if (strictPlacement) return [strictPlacement];
+
+    if (item.kind === "public-use") {
+      const relaxedPlacement = tryPlace(false);
+      if (relaxedPlacement) return [relaxedPlacement];
     }
 
-    const fallbackRect = buildNearbyTextRect(item.point, item.label, height);
-    if (
-      insideDrawWindow(fallbackRect)
-      && !overlapsLegend(fallbackRect)
-      && (item.kind === "pedestrian-road" || !occupiedNearbyRects.some((blocked) => rectsOverlap(fallbackRect, blocked)))
-    ) {
-      occupiedNearbyRects.push(fallbackRect);
-      return [{ ...item, height, point: item.point }];
-    }
     return [];
   });
 
