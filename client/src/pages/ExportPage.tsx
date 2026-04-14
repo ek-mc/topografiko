@@ -5,6 +5,7 @@ import NorthArrow from "@/components/NorthArrow";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
 import mainUseMap from "@shared/main-use-map.json";
+import otaOfficeMap from "@shared/ota-office-map.json";
 import {
   boundsFromPoints,
   BuildingTermsData,
@@ -36,6 +37,69 @@ type ExportMode = "parcel" | "ot" | "full";
 
 interface ExportPageProps {
   initialKaek?: string;
+}
+
+const REGION_BY_NOMOS: Record<string, string> = {
+  "ΑΤΤΙΚΗΣ": "Αττικής",
+  "ΑΙΤΩΛΟΑΚΑΡΝΑΝΙΑΣ": "Δυτικής Ελλάδας",
+  "ΑΡΓΟΛΙΔΟΣ": "Πελοποννήσου",
+  "ΑΡΚΑΔΙΑΣ": "Πελοποννήσου",
+  "ΑΡΤΑΣ": "Ηπείρου",
+  "ΑΧΑΪΑΣ": "Δυτικής Ελλάδας",
+  "ΑΧΑΙΑΣ": "Δυτικής Ελλάδας",
+  "ΒΟΙΩΤΙΑΣ": "Στερεάς Ελλάδας",
+  "ΓΡΕΒΕΝΩΝ": "Δυτικής Μακεδονίας",
+  "ΔΡΑΜΑΣ": "Ανατολικής Μακεδονίας και Θράκης",
+  "ΔΩΔΕΚΑΝΗΣΟΥ": "Νοτίου Αιγαίου",
+  "ΕΒΡΟΥ": "Ανατολικής Μακεδονίας και Θράκης",
+  "ΕΥΒΟΙΑΣ": "Στερεάς Ελλάδας",
+  "ΕΥΡΥΤΑΝΙΑΣ": "Στερεάς Ελλάδας",
+  "ΖΑΚΥΝΘΟΥ": "Ιονίων Νήσων",
+  "ΗΛΕΙΑΣ": "Δυτικής Ελλάδας",
+  "ΗΜΑΘΙΑΣ": "Κεντρικής Μακεδονίας",
+  "ΗΡΑΚΛΕΙΟΥ": "Κρήτης",
+  "ΘΕΣΠΡΩΤΙΑΣ": "Ηπείρου",
+  "ΘΕΣΣΑΛΟΝΙΚΗΣ": "Κεντρικής Μακεδονίας",
+  "ΙΩΑΝΝΙΝΩΝ": "Ηπείρου",
+  "ΚΑΒΑΛΑΣ": "Ανατολικής Μακεδονίας και Θράκης",
+  "ΚΑΡΔΙΤΣΑΣ": "Θεσσαλίας",
+  "ΚΑΣΤΟΡΙΑΣ": "Δυτικής Μακεδονίας",
+  "ΚΕΡΚΥΡΑΣ": "Ιονίων Νήσων",
+  "ΚΕΦΑΛΛΗΝΙΑΣ": "Ιονίων Νήσων",
+  "ΚΙΛΚΙΣ": "Κεντρικής Μακεδονίας",
+  "ΚΟΖΑΝΗΣ": "Δυτικής Μακεδονίας",
+  "ΚΟΡΙΝΘΙΑΣ": "Πελοποννήσου",
+  "ΚΥΚΛΑΔΩΝ": "Νοτίου Αιγαίου",
+  "ΛΑΚΩΝΙΑΣ": "Πελοποννήσου",
+  "ΛΑΡΙΣΑΣ": "Θεσσαλίας",
+  "ΛΑΣΙΘΙΟΥ": "Κρήτης",
+  "ΛΕΣΒΟΥ": "Βορείου Αιγαίου",
+  "ΛΕΥΚΑΔΑΣ": "Ιονίων Νήσων",
+  "ΜΑΓΝΗΣΙΑΣ": "Θεσσαλίας",
+  "ΜΕΣΣΗΝΙΑΣ": "Πελοποννήσου",
+  "ΞΑΝΘΗΣ": "Ανατολικής Μακεδονίας και Θράκης",
+  "ΠΕΙΡΑΙΩΣ": "Αττικής",
+  "ΠΕΛΛΗΣ": "Κεντρικής Μακεδονίας",
+  "ΠΙΕΡΙΑΣ": "Κεντρικής Μακεδονίας",
+  "ΠΡΕΒΕΖΑΣ": "Ηπείρου",
+  "ΡΕΘΥΜΝΗΣ": "Κρήτης",
+  "ΡΟΔΟΠΗΣ": "Ανατολικής Μακεδονίας και Θράκης",
+  "ΣΑΜΟΥ": "Βορείου Αιγαίου",
+  "ΣΕΡΡΩΝ": "Κεντρικής Μακεδονίας",
+  "ΤΡΙΚΑΛΩΝ": "Θεσσαλίας",
+  "ΦΘΙΩΤΙΔΑΣ": "Στερεάς Ελλάδας",
+  "ΦΛΩΡΙΝΑΣ": "Δυτικής Μακεδονίας",
+  "ΦΩΚΙΔΑΣ": "Στερεάς Ελλάδας",
+  "ΧΑΛΚΙΔΙΚΗΣ": "Κεντρικής Μακεδονίας",
+  "ΧΑΝΙΩΝ": "Κρήτης",
+  "ΧΙΟΥ": "Βορείου Αιγαίου",
+};
+
+function resolveRegionFromParcel(parcel: ParcelData | null | undefined) {
+  if (!parcel?.otaCode) return undefined;
+  const otaInfo = (otaOfficeMap as Record<string, { nomos?: string }>)[parcel.otaCode];
+  const nomos = (otaInfo?.nomos || "").trim().toUpperCase();
+  return nomos ? REGION_BY_NOMOS[nomos] || nomos : undefined;
 }
 
 type ElevationRow = {
@@ -384,6 +448,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     const parcels = exportParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
     const modeLabel = mode === "parcel" ? "parcel" : mode === "ot" ? "ot" : "full";
     const base = `${parcel.kaek}-${paperSize.toLowerCase()}-1-${scaleDenominator}-${modeLabel}`;
+    const regionName = resolveRegionFromParcel(parcel);
 
     if (format === "geojson") {
       downloadText(`${base}.geojson`, toGeoJSON(base, parcels), "application/geo+json;charset=utf-8");
@@ -400,7 +465,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           kaek: parcel.kaek,
           ot: teeData?.otNumber,
           municipality: teeData?.municipality,
-          region: officialRoadNames.length ? officialRoadNames.join(", ") : undefined,
+          region: regionName,
           area: parcel.area,
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
