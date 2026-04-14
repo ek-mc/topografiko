@@ -39,6 +39,7 @@ export type BuildingTermsData = {
   minArea?: string;
   minFrontage?: string;
   lotRuleType?: string;
+  lotRuleDescription?: string;
   buildingSystem?: string;
   notes: string[];
   sourceFek?: string;
@@ -70,6 +71,8 @@ export type NearbyPlanningAnnotation = {
   kind: "pedestrian-road" | "public-use";
   label: string;
   point: Point;
+  rotationDegrees?: number;
+  footprint?: Point[];
   sourceFek?: string;
   relation?: "intersects" | "nearby";
   distanceToParcel?: number;
@@ -449,6 +452,44 @@ function selectNearbyAnnotationPoint(points: Point[], bounds: { minX: number; mi
   return closestPointToTarget(usable, target);
 }
 
+function geometryPathsFromFeature(feature: TEERawFeature) {
+  const ringPaths = (feature.geometry?.rings || []).map((ring) => ring.map((point) => ({ x: Number(point[0]), y: Number(point[1]) })));
+  const linePaths = (feature.geometry?.paths || []).map((path) => path.map((point) => ({ x: Number(point[0]), y: Number(point[1]) })));
+  return [...ringPaths, ...linePaths].filter((path) => path.length >= 2);
+}
+
+function segmentMidpoint(start: Point, end: Point) {
+  return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+}
+
+function selectLinearAnnotationPlacement(
+  paths: Point[][],
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  target: Point,
+): { point: Point; rotationDegrees: number; score: number } | null {
+  let best: { point: Point; rotationDegrees: number; score: number } | null = null;
+  paths.forEach((path) => {
+    const usable = stripClosingPoint(path);
+    for (let index = 0; index < usable.length - 1; index += 1) {
+      const start = usable[index];
+      const end = usable[index + 1];
+      const midpoint = segmentMidpoint(start, end);
+      if (!pointInBounds(midpoint, bounds)) continue;
+      const length = segmentLength(start, end);
+      if (length <= 1e-6) continue;
+      const score = length - Math.sqrt(distanceSquared(midpoint, target)) * 0.12;
+      if (!best || score > best.score) {
+        best = {
+          point: midpoint,
+          rotationDegrees: edgeAngleDegrees(start, end),
+          score,
+        };
+      }
+    }
+  });
+  return best;
+}
+
 export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Promise<NearbyPlanningAnnotation[]> {
   const usableRings = ringsGgrs87.map((ring) => stripClosingPoint(ring)).filter((ring) => ring.length >= 3);
   if (!usableRings.length) return [];
@@ -471,24 +512,31 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
     const seen = new Set<string>();
     const annotations: NearbyPlanningAnnotation[] = [];
 
-    pedestrianFeatures.forEach((feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }) => {
+    pedestrianFeatures.forEach((feature: TEERawFeature) => {
       const attrs = feature?.attributes || {};
-      const ring = Array.isArray(feature?.geometry?.rings?.[0])
-        ? feature.geometry.rings[0].map((point: number[]) => ({ x: Number(point[0]), y: Number(point[1]) }))
-        : [];
-      const usable = stripClosingPoint(ring);
-      const center = selectNearbyAnnotationPoint(usable, expandedBounds, parcelCenter);
-      const label = cleanNearbyPlanningLabel(readString(attrs.PZ_XRHSH) || "ΠΕΖΟΔΡΟΜΟΣ");
+      const paths = geometryPathsFromFeature(feature);
+      const points = paths.flatMap((path) => stripClosingPoint(path));
+      const linearPlacement = selectLinearAnnotationPlacement(paths, expandedBounds, parcelCenter);
+      const center = linearPlacement?.point || selectNearbyAnnotationPoint(points, expandedBounds, parcelCenter);
+      const label = cleanNearbyPlanningLabel(readString(attrs.PZ_XRHSH) || readString(attrs.TITLE) || "ΠΕΖΟΔΡΟΜΟΣ");
       if (!center || !label) return;
       const distanceToParcel = distancePointToRings(center, usableRings);
       if (distanceToParcel > 180) return;
       const key = `pedestrian-road::${Math.round(center.x)}::${Math.round(center.y)}::${label}`;
       if (seen.has(key)) return;
       seen.add(key);
-      annotations.push({ kind: "pedestrian-road", label, point: center, sourceFek: readString(attrs.FEK), relation: distanceToParcel <= 25 ? "intersects" : "nearby", distanceToParcel });
+      annotations.push({
+        kind: "pedestrian-road",
+        label,
+        point: center,
+        rotationDegrees: linearPlacement?.rotationDegrees,
+        sourceFek: readString(attrs.FEK),
+        relation: distanceToParcel <= 25 ? "intersects" : "nearby",
+        distanceToParcel,
+      });
     });
 
-    publicUseFeatures.forEach((feature: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }) => {
+    publicUseFeatures.forEach((feature: TEERawFeature) => {
       const attrs = feature?.attributes || {};
       const ring = Array.isArray(feature?.geometry?.rings?.[0])
         ? feature.geometry.rings[0].map((point: number[]) => ({ x: Number(point[0]), y: Number(point[1]) }))
@@ -502,7 +550,15 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
       const key = `public-use::${Math.round(center.x)}::${Math.round(center.y)}::${label}`;
       if (seen.has(key)) return;
       seen.add(key);
-      annotations.push({ kind: "public-use", label, point: center, sourceFek: readString(attrs.FEK), relation: distanceToParcel <= 25 ? "intersects" : "nearby", distanceToParcel });
+      annotations.push({
+        kind: "public-use",
+        label,
+        point: center,
+        footprint: usable,
+        sourceFek: readString(attrs.FEK),
+        relation: distanceToParcel <= 25 ? "intersects" : "nearby",
+        distanceToParcel,
+      });
     });
 
     return annotations
@@ -545,6 +601,23 @@ async function fetchTEELayerFeatureByPoint(layerId: number, outFields: string[],
   return features[0]?.attributes || null;
 }
 
+function formatLotRuleDescription(lotRuleType: string, datePareklisis: string) {
+  const rawType = readString(lotRuleType).toUpperCase();
+  const date = readString(datePareklisis);
+  if (!rawType) return "";
+  if (rawType.includes("ΚΑΤΑ ΚΑΝΟΝΑ")) return "Άρτιο κατά κανόνα";
+  if (rawType.includes("ΚΑΤΑ ΠΑΡΕΚΚΛΙΣΗ")) {
+    return date ? `Άρτιο κατά παρέκκλιση (προ της ${date})` : "Άρτιο κατά παρέκκλιση";
+  }
+  if (rawType === "ΟΧΙ" || rawType.includes("ΜΗ ΑΡΤΙ")) return "Μη άρτιο";
+  return readString(lotRuleType);
+}
+
+function isIgnorableBuildingTermsNote(value: string) {
+  const normalized = readString(value).toUpperCase();
+  return !normalized || normalized === "ΟΧΙ" || normalized === "ΚΑΤΑ ΚΑΝΟΝΑ" || normalized === "ΚΑΤΑ ΠΑΡΕΚΚΛΙΣΗ";
+}
+
 export async function fetchBuildingTerms(rings: Point[][]): Promise<BuildingTermsData | null> {
   if (!rings?.[0]?.length) return null;
   const parcelCentroid = centroidOfRing(stripClosingPoint(rings[0]));
@@ -556,21 +629,21 @@ export async function fetchBuildingTerms(rings: Point[][]): Promise<BuildingTerm
     fetchTEELayerFeatureByPoint(20, ["FEK", "SD_TIMH", "SD_TOMEAS", "SD_KLIMAKOTOS", "SD_COMMENT", "APOF_EIDOS", "TITLE", "NUMBER_", "SIGN_DATE"], parcelCentroid),
   ]);
 
+  const lotRuleType = readString(areaAttrs?.OROS_TYPE);
+  const lotRuleDescription = formatLotRuleDescription(lotRuleType, readString(areaAttrs?.DATE_PAREKLISIS));
   const notes = [
     readString(heightAttrs?.SYNTHIKI_TXT),
     readString(heightAttrs?.OROR_MAX_HEIGHT_COMMENT),
     readString(heightAttrs?.OROR_NUM_OROFON_COMMENT),
     readString(areaAttrs?.SYNTHIKI_TXT),
     readString(areaAttrs?.REMARKS),
-    readString(areaAttrs?.OROS_TYPE),
-    readString(areaAttrs?.DATE_PAREKLISIS),
     readString(coverageAttrs?.SYNTHIKI_TXT),
     readString(coverageAttrs?.REMARKS),
     readString(systemAttrs?.SYNTHIKI_TXT),
     readString(systemAttrs?.OROIKS_COMMENT),
     readString(densityAttrs?.SD_KLIMAKOTOS),
     readString(densityAttrs?.SD_COMMENT),
-  ].filter(Boolean);
+  ].filter((note) => !isIgnorableBuildingTermsNote(note));
 
   const dedupedNotes = Array.from(new Set(notes));
   const result: BuildingTermsData = {
@@ -583,7 +656,8 @@ export async function fetchBuildingTerms(rings: Point[][]): Promise<BuildingTerm
     floors: formatValue(heightAttrs?.NUM_OROFON, "όροφοι", 0),
     minArea: formatValue(areaAttrs?.ELAX_EMBADO_M2, "m²"),
     minFrontage: formatValue(areaAttrs?.ELAX_PROSOP_M, "m"),
-    lotRuleType: readString(areaAttrs?.OROS_TYPE),
+    lotRuleType,
+    lotRuleDescription,
     buildingSystem: readString(systemAttrs?.OIK_SYSTHMA),
     notes: dedupedNotes,
     sourceFek: readString(densityAttrs?.FEK || coverageAttrs?.FEK || heightAttrs?.FEK || areaAttrs?.FEK || systemAttrs?.FEK),
@@ -594,7 +668,7 @@ export async function fetchBuildingTerms(rings: Point[][]): Promise<BuildingTerm
   };
 
   const hasAnyValue = Boolean(
-    result.sd || result.coverage || result.maxHeight || result.floors || result.minArea || result.minFrontage || result.lotRuleType || result.buildingSystem || result.maxCoverageArea || result.sdSector || result.sdComment || result.notes.length,
+    result.sd || result.coverage || result.maxHeight || result.floors || result.minArea || result.minFrontage || result.lotRuleDescription || result.buildingSystem || result.maxCoverageArea || result.sdSector || result.sdComment || result.notes.length,
   );
 
   return hasAnyValue ? result : null;
@@ -1043,7 +1117,7 @@ function addDxfCircle(
   return entity;
 }
 
-export type CoordinateRow = { label: string; x: string; y: string };
+export type CoordinateRow = { label: string; x: string; y: string; side?: string };
 
 export function greekLabel(index: number) {
   const letters = ["Α", "Β", "Γ", "Δ", "Ε", "Ζ", "Η", "Θ", "Ι", "Κ", "Λ", "Μ", "Ν", "Ξ", "Ο", "Π", "Ρ", "Σ", "Τ", "Υ", "Φ", "Χ", "Ψ", "Ω"];
@@ -1065,12 +1139,15 @@ export function normalizeRingFromNorthEast(points: Point[]) {
 }
 
 export function formatCoordinateRows(points: Point[], prefix: "T" | "P" = "T", coordinatesAreGgrs87 = false): CoordinateRow[] {
-  return stripClosingPoint(points).map((point, index) => {
+  const usable = stripClosingPoint(points);
+  return usable.map((point, index) => {
     const [x, y] = coordinatesAreGgrs87 ? [point.x, point.y] : transformToGGRS87(point.x, point.y);
+    const next = usable[(index + 1) % usable.length];
     return {
       label: prefix === "T" ? `T${index + 1}` : greekLabel(index),
       x: x.toFixed(3),
       y: y.toFixed(3),
+      side: next ? segmentLength(point, next).toFixed(2) : "",
     };
   });
 }
@@ -1339,6 +1416,7 @@ export function toDXF(
     otRings?: Point[][];
     contextOts?: TEEData[];
     buildingTerms?: BuildingTermsData | null;
+    declarations?: Array<{ title: string; text: string }>;
     nearbyAnnotations?: NearbyPlanningAnnotation[];
     urbanLines?: Point[][];
     buildingLines?: Point[][];
@@ -1487,14 +1565,31 @@ export function toDXF(
   const legendX = drawWin.x1 - legendWidth - mm(1.5);
   const legendY = drawWin.y0 + mm(1.5);
   const clipRect = { minX: drawWin.x0, minY: drawWin.y0, maxX: drawWin.x1, maxY: drawWin.y1 };
-  const sheetNearbyAnnotations = rotatedNearbyAnnotations
-    .map((item) => ({ ...item, point: toSheet(item.point) }))
+  const rawSheetNearbyAnnotations = rotatedNearbyAnnotations
+    .map((item) => ({
+      ...item,
+      point: toSheet(item.point),
+      rotationDegrees: typeof item.rotationDegrees === "number" ? normalizeHorizontalRotation(item.rotationDegrees + parcelRotationDegrees) : undefined,
+      footprint: item.footprint?.map(toSheet),
+    }))
     .filter((item) => item.point.x >= drawWin.x0 && item.point.x <= drawWin.x1 && item.point.y >= drawWin.y0 && item.point.y <= drawWin.y1);
   const legendMaskRect = {
     minX: legendX - mm(1.4),
     minY: legendY - mm(1.4),
     maxX: legendX + legendWidth + mm(1.4),
     maxY: legendY + legendHeight + mm(1.4),
+  };
+  const rectsOverlap = (a: { minX: number; minY: number; maxX: number; maxY: number }, b: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
+  };
+  const buildNearbyTextRect = (point: Point, label: string, height: number) => {
+    const width = estimateTextWidth(label, height);
+    return {
+      minX: point.x - width / 2 - mm(0.9),
+      maxX: point.x + width / 2 + mm(0.9),
+      minY: point.y - height * 0.8,
+      maxY: point.y + height * 0.8,
+    };
   };
   const addMaskedSheetLine = (start: Point, end: Point, options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number }) => {
     const clipped = clipSegmentToRect(start, end, clipRect);
@@ -1629,9 +1724,52 @@ export function toDXF(
   const mainLabelPoint = toSheet(centroidOfRing(mainParcel.rings[0]));
   addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mm(1.8), mainParcel.kaek, { layerName: "ANNOTATION" });
 
-  sheetNearbyAnnotations.forEach((item) => {
+  const otBlockedRects = [
+    ...rotatedContextOts.flatMap((ot) => ot.rings.slice(0, 1)),
+    ...rotatedOtRings.slice(0, 1),
+  ].map((ring) => {
+    const sheetPoints = stripClosingPoint(ring).map(toSheet);
+    const bounds = boundsFromPoints(sheetPoints);
+    return {
+      minX: bounds.minX - mm(6),
+      minY: bounds.minY - mm(4),
+      maxX: bounds.maxX + mm(6),
+      maxY: bounds.maxY + mm(4),
+    };
+  });
+  const occupiedNearbyRects = [...otBlockedRects, legendMaskRect];
+  const placedNearbyAnnotations = rawSheetNearbyAnnotations.flatMap((item) => {
     const height = item.kind === "pedestrian-road" ? mm(1.55) : mm(1.4);
-    addCenteredDxfText(writer, item.point.x, item.point.y, height, item.label, {
+    if (item.kind === "pedestrian-road") {
+      const rect = buildNearbyTextRect(item.point, item.label, height);
+      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return [];
+      if (occupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) return [];
+      occupiedNearbyRects.push(rect);
+      return [{ ...item, height, point: item.point }];
+    }
+
+    const candidates = [
+      item.point,
+      { x: item.point.x + mm(12), y: item.point.y },
+      { x: item.point.x - mm(12), y: item.point.y },
+      { x: item.point.x, y: item.point.y + mm(8) },
+      { x: item.point.x, y: item.point.y - mm(8) },
+      { x: item.point.x + mm(10), y: item.point.y + mm(6) },
+      { x: item.point.x - mm(10), y: item.point.y + mm(6) },
+    ];
+    for (const candidate of candidates) {
+      const rect = buildNearbyTextRect(candidate, item.label, height);
+      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) continue;
+      if (occupiedNearbyRects.some((blocked) => rectsOverlap(rect, blocked))) continue;
+      occupiedNearbyRects.push(rect);
+      return [{ ...item, height, point: candidate }];
+    }
+    return [];
+  });
+
+  placedNearbyAnnotations.forEach((item) => {
+    addCenteredDxfText(writer, item.point.x, item.point.y, item.height, item.label, {
+      rotation: item.kind === "pedestrian-road" ? item.rotationDegrees : undefined,
       layerName: "ANNOTATION",
       colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
     });
@@ -2013,7 +2151,7 @@ export function toDXF(
         ["Όροφοι", terms.floors || ""],
         ["Ελάχ. εμβαδό", terms.minArea || ""],
         ["Ελάχ. πρόσωπο", terms.minFrontage || ""],
-        ["Αρτιότητα", terms.lotRuleType || ""],
+        ["Αρτιότητα", terms.lotRuleDescription || terms.lotRuleType || ""],
         ["Οικ. σύστημα", terms.buildingSystem || ""],
       ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
 
@@ -2039,6 +2177,24 @@ export function toDXF(
           addDxfText(writer, labelX, y, mm(1.14), line, { layerName: "ANNOTATION" });
           y -= mm(2.9);
         });
+      });
+    }
+
+    if (meta?.declarations?.length && y > contentBottomLimit + mm(8)) {
+      addDxfLine(writer, { x: x0, y: y + mm(1.5) }, { x: x1, y: y + mm(1.5) }, { layerName: "ANNOTATION" });
+      addDxfText(writer, labelX, y - mm(2), mm(2), "Δηλώσεις", { layerName: "ANNOTATION" });
+      y -= mm(8);
+
+      meta.declarations.forEach((declaration) => {
+        if (y <= contentBottomLimit) return;
+        addDxfText(writer, labelX, y, mm(1.48), declaration.title, { layerName: "ANNOTATION" });
+        y -= mm(3.8);
+        wrapTextByWidth(declaration.text, x1 - labelX - mm(4), mm(1.14)).forEach((line) => {
+          if (y <= contentBottomLimit) return;
+          addDxfText(writer, labelX, y, mm(1.14), line, { layerName: "ANNOTATION" });
+          y -= mm(2.9);
+        });
+        y -= mm(1.6);
       });
     }
   }

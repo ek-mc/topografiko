@@ -119,6 +119,33 @@ const greekLabels = [
   "Α", "Β", "Γ", "Δ", "Ε", "Ζ", "Η", "Θ", "Ι", "Κ", "Λ", "Μ", "Ν", "Ξ", "Ο", "Π", "Ρ", "Σ", "Τ", "Υ", "Φ", "Χ", "Ψ", "Ω",
 ];
 
+const DEFAULT_DECLARATION_TEMPLATES = [
+  {
+    key: "n65177",
+    title: "Δήλωση Ν.651/77",
+    template: "Το οικόπεδο με τα στοιχεία {{loopLabel}} και ΚΑΕΚ {{kaek}}, ιδιοκτησίας του eTopografiko, που βρίσκεται επί της οδού eTopografiko και αρ. eTopografiko στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} είναι άρτιο και οικοδομήσιμο σύμφωνα με τις κείμενες πολεοδομικές διατάξεις.",
+  },
+  {
+    key: "boundaries",
+    title: "Δήλωση Υλοποίησης Ορίων",
+    template: "Δηλώνω ότι τα όρια του οικοπέδου με ΚΑΕΚ {{kaek}} στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} έχουν υλοποιηθεί σύμφωνα με τα διαθέσιμα στοιχεία της αποτύπωσης.",
+  },
+  {
+    key: "ogrg",
+    title: "Καθορισμός ΟΓ-ΡΓ",
+    template: "Οι Ο.Γ.-Ρ.Γ. του οικοπέδου με ΚΑΕΚ {{kaek}} στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} θα τεθούν επί των καλώς μορφωμένων Ο.Γ. και Ρ.Γ. σύμφωνα με το εγκεκριμένο ρυμοτομικό σχέδιο.",
+  },
+  {
+    key: "dei-rema",
+    title: "Δήλωση ΔΕΗ-Ρεμάτων",
+    template: "Δηλώνω ότι από το οικόπεδο με ΚΑΕΚ {{kaek}} στο Ο.Τ. {{otNumber}} του ΔΗΜΟΥ {{municipality}} δεν διέρχεται ρέμα ούτε γραμμή υψηλής τάσης. Να προσαρμοστεί εφόσον απαιτείται ειδικός έλεγχος για την περιοχή.",
+  },
+] as const;
+
+function renderDeclarationTemplate(template: string, values: Record<string, string>) {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, token: string) => values[token] || "eTopografiko");
+}
+
 function pointLabel(index: number) {
   return greekLabels[index] || `P${index + 1}`;
 }
@@ -169,6 +196,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
+  const [showDeclarations, setShowDeclarations] = useState(false);
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
@@ -402,6 +430,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     return nearbyAnnotations.map((item) => ({
       ...item,
       point: rotateRings([[item.point]], previewRotationCenter, previewRotationDegrees)[0][0],
+      rotationDegrees: typeof item.rotationDegrees === "number" ? item.rotationDegrees + previewRotationDegrees : undefined,
+      footprint: item.footprint?.length ? rotateRings([item.footprint], previewRotationCenter, previewRotationDegrees)[0] : undefined,
     }));
   }, [nearbyAnnotations, previewRotationCenter, previewRotationDegrees]);
 
@@ -435,7 +465,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
       ["Όροφοι", buildingTerms.floors || ""],
       ["Ελάχ. εμβαδό", buildingTerms.minArea || ""],
       ["Ελάχ. πρόσωπο", buildingTerms.minFrontage || ""],
-      ["Αρτιότητα", buildingTerms.lotRuleType || ""],
+      ["Αρτιότητα", buildingTerms.lotRuleDescription || buildingTerms.lotRuleType || ""],
       ["Οικ. σύστημα", buildingTerms.buildingSystem || ""],
     ].filter(([, value]) => Boolean(value));
   }, [buildingTerms]);
@@ -444,6 +474,20 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     if (!coords.length) return "";
     return `${coords.map((row) => row.label).join("")}${coords[0].label}`;
   }, [coords]);
+
+  const declarationValues = useMemo(() => ({
+    kaek: parcel?.kaek || "*",
+    municipality: teeData?.municipality || "*",
+    otNumber: teeData?.otNumber || "*",
+    loopLabel: coordinateLoopLabel ? `${coordinateLoopLabel}` : "*",
+  }), [parcel?.kaek, teeData?.municipality, teeData?.otNumber, coordinateLoopLabel]);
+
+  const declarationRows = useMemo(() => {
+    return DEFAULT_DECLARATION_TEMPLATES.map((item) => ({
+      title: item.title,
+      text: renderDeclarationTemplate(item.template, declarationValues),
+    }));
+  }, [declarationValues]);
 
   const fetchElevations = async () => {
     if (!parcel?.rings?.[0]?.length) return;
@@ -533,6 +577,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           otRings: includeOtContext ? teeData?.rings : undefined,
           contextOts: includeFullContext ? contextOts : undefined,
           buildingTerms: showTerms ? buildingTerms : null,
+          declarations: showDeclarations ? declarationRows : undefined,
           urbanLines: includeFullContext ? urbanLines : undefined,
           buildingLines: includeFullContext ? buildingLines : undefined,
         }),
@@ -597,6 +642,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   { state: showLegend, setter: setShowLegend, label: "Υπόμνημα" },
                   { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
                   { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
+                  { state: showDeclarations, setter: setShowDeclarations, label: "Δηλώσεις" },
                 ].map(({ state, setter, label }) => (
                   <button
                     key={label}
@@ -781,6 +827,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               fontSize={item.kind === "pedestrian-road" ? 4.2 : 3.8}
                               textAnchor="middle"
                               dominantBaseline="middle"
+                              transform={item.kind === "pedestrian-road" && typeof item.rotationDegrees === "number" ? `rotate(${item.rotationDegrees} ${p.x} ${p.y})` : undefined}
                               fill={item.kind === "pedestrian-road" ? (isDark ? "#fde047" : "#a16207") : (isDark ? "#86efac" : "#166534")}
                             >
                               {item.label}
@@ -907,18 +954,20 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         <div className="border-b border-border px-3 py-2 text-center text-[11px] font-semibold tracking-wide text-foreground">
                           ΣΥΝΤ/ΜΕΝΕΣ ΚΟΡΥΦΩΝ ΟΙΚΟΠΕΔΟΥ ΕΓΣΑ&apos;87
                         </div>
-                        <div className={`grid ${showElevations ? "grid-cols-[56px_1fr_1fr_100px]" : "grid-cols-[56px_1fr_1fr]"} border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground`}>
+                        <div className={`grid ${showElevations ? "grid-cols-[52px_1fr_1fr_82px_92px]" : "grid-cols-[52px_1fr_1fr_82px]"} border-b border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground`}>
                           <div>Α/Α</div>
                           <div>X</div>
                           <div>Y</div>
+                          <div>Πλευρά</div>
                           {showElevations ? <div>Z</div> : null}
                         </div>
                         <div className="divide-y divide-border text-xs">
                           {coords.map((row, idx) => (
-                            <div key={row.label} className={`grid ${showElevations ? "grid-cols-[56px_1fr_1fr_100px]" : "grid-cols-[56px_1fr_1fr]"} px-3 py-1.5`}>
+                            <div key={row.label} className={`grid ${showElevations ? "grid-cols-[52px_1fr_1fr_82px_92px]" : "grid-cols-[52px_1fr_1fr_82px]"} px-3 py-1.5`}>
                               <div>{row.label}</div>
                               <div>{row.x}</div>
                               <div>{row.y}</div>
+                              <div>{row.side || "—"}</div>
                               {showElevations ? <div>{Number.isFinite(elevationRows[idx]?.z) ? elevationRows[idx].z.toFixed(3) : "—"}</div> : null}
                             </div>
                           ))}
@@ -973,6 +1022,16 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               {buildingTerms.sourceFek ? <div>ΦΕΚ: {buildingTerms.sourceFek}</div> : null}
                               {buildingTerms.sourceDecisionNumber ? <div>Αριθ. απόφασης: {buildingTerms.sourceDecisionNumber}</div> : null}
                               {buildingTerms.sourceDate ? <div>Ημ/νία: {buildingTerms.sourceDate}</div> : null}
+                            </div>
+                          ) : null}
+                          {showDeclarations ? (
+                            <div className="space-y-3 border-t border-border pt-3">
+                              {declarationRows.map((row) => (
+                                <div key={row.title} className="space-y-1.5">
+                                  <div className="font-semibold text-foreground">{row.title}</div>
+                                  <div className="leading-5 text-muted-foreground">{row.text}</div>
+                                </div>
+                              ))}
                             </div>
                           ) : null}
                         </div>
