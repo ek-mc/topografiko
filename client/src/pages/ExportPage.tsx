@@ -961,11 +961,6 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               </Fragment>
                             ))}
                           </div>
-                          {nearbyAnnotations.length ? (
-                            <div className="rounded-lg border border-border/70 bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground">
-                              {`Πλησίον: ${Array.from(new Set(nearbyAnnotations.map((item) => item.label))).slice(0, 4).join(", ")}`}
-                            </div>
-                          ) : null}
                           {buildingTerms.notes.length ? (
                             <div className="space-y-1.5 border-t border-border pt-2 text-muted-foreground">
                               {buildingTerms.notes.map((note, index) => (

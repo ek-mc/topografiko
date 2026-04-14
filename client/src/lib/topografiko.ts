@@ -409,6 +409,46 @@ async function queryArcGisLayerByGeometry(layerId: number, ringsGgrs87: Point[][
   return Array.isArray(payload?.features) ? payload.features : [];
 }
 
+async function queryArcGisLayerByBounds(layerId: number, bounds: { minX: number; minY: number; maxX: number; maxY: number }) {
+  const geometry = {
+    xmin: bounds.minX,
+    ymin: bounds.minY,
+    xmax: bounds.maxX,
+    ymax: bounds.maxY,
+    spatialReference: { wkid: 2100 },
+  };
+  const params = new URLSearchParams({
+    f: "json",
+    geometry: JSON.stringify(geometry),
+    geometryType: "esriGeometryEnvelope",
+    inSR: "2100",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: "*",
+    returnGeometry: "true",
+    outSR: "2100",
+  });
+  const response = await fetch(`https://sdigmap.tee.gov.gr/mapping/rest/services/UDM/UDM_SERVICE_POLEODOMIKI_PLIROFORIA/MapServer/${layerId}/query?${params.toString()}`);
+  if (!response.ok) throw new Error(`Layer ${layerId} bounds query failed with status ${response.status}`);
+  const payload = await response.json();
+  return Array.isArray(payload?.features) ? payload.features : [];
+}
+
+function closestPointToTarget(points: Point[], target: Point) {
+  return points.reduce((best, point) => {
+    const distance = distanceSquared(point, target);
+    return !best || distance < best.distance ? { point, distance } : best;
+  }, null as { point: Point; distance: number } | null)?.point ?? null;
+}
+
+function selectNearbyAnnotationPoint(points: Point[], bounds: { minX: number; minY: number; maxX: number; maxY: number }, target: Point) {
+  const usable = stripClosingPoint(points);
+  if (!usable.length) return null;
+  const visible = usable.filter((point) => pointInBounds(point, bounds));
+  if (visible.length >= 2) return centroidOfRing(visible);
+  if (visible.length === 1) return visible[0];
+  return closestPointToTarget(usable, target);
+}
+
 export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Promise<NearbyPlanningAnnotation[]> {
   const usableRings = ringsGgrs87.map((ring) => stripClosingPoint(ring)).filter((ring) => ring.length >= 3);
   if (!usableRings.length) return [];
@@ -422,9 +462,10 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
   };
 
   try {
+    const parcelCenter = centroidOfRing(usableRings[0]);
     const [pedestrianFeatures, publicUseFeatures] = await Promise.all([
-      queryArcGisLayerByGeometry(8, usableRings).catch(() => []),
-      queryArcGisLayerByGeometry(22, usableRings).catch(() => []),
+      queryArcGisLayerByBounds(8, expandedBounds).catch(() => []),
+      queryArcGisLayerByBounds(22, expandedBounds).catch(() => []),
     ]);
 
     const seen = new Set<string>();
@@ -436,10 +477,11 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
         ? feature.geometry.rings[0].map((point: number[]) => ({ x: Number(point[0]), y: Number(point[1]) }))
         : [];
       const usable = stripClosingPoint(ring);
-      const center = usable.length ? centroidOfRing(usable) : null;
+      const center = selectNearbyAnnotationPoint(usable, expandedBounds, parcelCenter);
       const label = cleanNearbyPlanningLabel(readString(attrs.PZ_XRHSH) || "ΠΕΖΟΔΡΟΜΟΣ");
-      if (!center || !label || !pointInBounds(center, expandedBounds)) return;
+      if (!center || !label) return;
       const distanceToParcel = distancePointToRings(center, usableRings);
+      if (distanceToParcel > 180) return;
       const key = `pedestrian-road::${Math.round(center.x)}::${Math.round(center.y)}::${label}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -452,10 +494,11 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
         ? feature.geometry.rings[0].map((point: number[]) => ({ x: Number(point[0]), y: Number(point[1]) }))
         : [];
       const usable = stripClosingPoint(ring);
-      const center = usable.length ? centroidOfRing(usable) : null;
+      const center = selectNearbyAnnotationPoint(usable, expandedBounds, parcelCenter);
       const label = cleanNearbyPlanningLabel(readString(attrs.EID_XRHSH_TXT) || readString(attrs.TITLE));
-      if (!center || !label || !pointInBounds(center, expandedBounds)) return;
+      if (!center || !label) return;
       const distanceToParcel = distancePointToRings(center, usableRings);
+      if (distanceToParcel > 220) return;
       const key = `public-use::${Math.round(center.x)}::${Math.round(center.y)}::${label}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -463,7 +506,13 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
     });
 
     return annotations
-      .sort((a, b) => (a.distanceToParcel ?? Number.POSITIVE_INFINITY) - (b.distanceToParcel ?? Number.POSITIVE_INFINITY) || a.label.localeCompare(b.label, "el"))
+      .sort((a, b) => {
+        const kindPriority = (a.kind === "pedestrian-road" ? 0 : 1) - (b.kind === "pedestrian-road" ? 0 : 1);
+        if (kindPriority !== 0) return kindPriority;
+        const distancePriority = (a.distanceToParcel ?? Number.POSITIVE_INFINITY) - (b.distanceToParcel ?? Number.POSITIVE_INFINITY);
+        if (Math.abs(distancePriority) > 1e-9) return distancePriority;
+        return a.label.localeCompare(b.label, "el");
+      })
       .slice(0, 8);
   } catch (error) {
     console.warn("Nearby planning annotation lookup failed; continuing without nearby labels.", error);
@@ -1974,15 +2023,6 @@ export function toDXF(
         y -= mm(4.1);
       });
 
-      const contextualLabels = Array.from(new Set((meta?.nearbyAnnotations || []).map((item) => item.label))).slice(0, 4);
-      if (contextualLabels.length) {
-        y -= mm(0.8);
-        wrapTextByWidth(`Πλησίον: ${contextualLabels.join(", ")}`, x1 - labelX - mm(4), mm(1.22)).forEach((line) => {
-          if (y <= contentBottomLimit) return;
-          addDxfText(writer, labelX, y, mm(1.22), line, { layerName: "ANNOTATION" });
-          y -= mm(3.2);
-        });
-      }
 
       const sourceParts = [terms.sourceFek, terms.sourceDecisionNumber, terms.sourceDate].filter(Boolean).join(" | ");
       if (sourceParts) {
