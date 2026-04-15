@@ -783,8 +783,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => download("geojson")}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground/50 opacity-60"
                     >
                       <Download className="h-4 w-4" />GeoJSON
                     </button>
