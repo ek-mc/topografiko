@@ -327,7 +327,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           ...item,
           relation: "adjacent" as const,
         }));
-        const adjacentKaeks = new Set(adjacent.map((item) => item.kaek));
+        const adjacentKaeks = new Set(filteredCurrentOt.map((item) => item.kaek));
         const limitedSurroundingOts = surroundingOts.slice(0, 8);
 
         const surroundingParcelGroups = await Promise.all(
@@ -351,7 +351,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           relation: "opposite" as const,
         }));
 
-        setOtParcels(adjacent);
+        setOtParcels(filteredCurrentOt);
         setContextParcels(opposite);
         setContextOts(limitedSurroundingOts);
       } catch (error) {
@@ -371,6 +371,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     };
   }, [initialKaek]);
 
+  const isSimpleMode = mode === "parcel" || mode === "ot";
   const includeBlock = mode !== "parcel";
   const includeOtContext = mode === "ot" || mode === "full";
   const includeFullContext = mode === "full";
@@ -566,7 +567,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
     const parcels = exportParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
     const modeLabel = mode === "parcel" ? "parcel" : mode === "ot" ? "ot" : "full";
-    const base = `${parcel.kaek}-${paperSize.toLowerCase()}-1-${scaleDenominator}-${modeLabel}`;
+    const base = mode === "full"
+      ? `${parcel.kaek}-${paperSize.toLowerCase()}-1-${scaleDenominator}-${modeLabel}`
+      : `${parcel.kaek}-${modeLabel}-meters`;
     const regionName = resolveRegionFromParcel(parcel);
 
     if (format === "geojson") {
@@ -586,6 +589,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           municipality: teeData?.municipality,
           region: regionName,
           area: parcel.area,
+          exportMode: mode,
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
           nearbyAnnotations: showNearbyLabels ? nearbyAnnotations : [],
@@ -653,110 +657,114 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 ))}
               </div>
 
-              <div className="inline-flex flex-wrap gap-2 text-sm">
-                  {[
-                  { state: showCoords, setter: setShowCoords, label: "Συντεταγμένες" },
-                  { state: showParcelData, setter: setShowParcelData, label: "Στοιχεία" },
-                  { state: showLegend, setter: setShowLegend, label: "Υπόμνημα" },
-                  { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
-                  { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
-                  { state: showNearbyLabels, setter: setShowNearbyLabels, label: "Κ.Π. / ΠΕΖΟΔΡΟΜΟΣ" },
-                ].map(({ state, setter, label }) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setter((v) => !v)}
-                    className={`rounded-full border px-3 py-1.5 transition-colors ${
-                      state
-                        ? "border-blue-300 bg-blue-500/10 text-blue-700 dark:border-blue-400/40 dark:bg-blue-400/15 dark:text-blue-200"
-                        : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-                {DEFAULT_DECLARATION_TEMPLATES.map((item) => {
-                  const active = activeDeclarations[item.key];
-                  return (
+              {mode === "full" ? (
+                <>
+                  <div className="inline-flex flex-wrap gap-2 text-sm">
+                      {[
+                      { state: showCoords, setter: setShowCoords, label: "Συντεταγμένες" },
+                      { state: showParcelData, setter: setShowParcelData, label: "Στοιχεία" },
+                      { state: showLegend, setter: setShowLegend, label: "Υπόμνημα" },
+                      { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
+                      { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
+                      { state: showNearbyLabels, setter: setShowNearbyLabels, label: "Κ.Π. / ΠΕΖΟΔΡΟΜΟΣ" },
+                    ].map(({ state, setter, label }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setter((v) => !v)}
+                        className={`rounded-full border px-3 py-1.5 transition-colors ${
+                          state
+                            ? "border-blue-300 bg-blue-500/10 text-blue-700 dark:border-blue-400/40 dark:bg-blue-400/15 dark:text-blue-200"
+                            : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {DEFAULT_DECLARATION_TEMPLATES.map((item) => {
+                      const active = activeDeclarations[item.key];
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setActiveDeclarations((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                          className={`rounded-full border px-3 py-1.5 transition-colors ${
+                            active
+                              ? "border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-200"
+                              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                          }`}
+                        >
+                          {item.title}
+                        </button>
+                      );
+                    })}
                     <button
-                      key={item.key}
                       type="button"
-                      onClick={() => setActiveDeclarations((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
-                      className={`rounded-full border px-3 py-1.5 transition-colors ${
-                        active
-                          ? "border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-200"
-                          : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      }`}
+                      onClick={toggleElevations}
+                      disabled
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-muted-foreground opacity-60"
                     >
-                      {item.title}
+                      <Mountain className="h-3.5 w-3.5" />
+                      Elevation
                     </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={toggleElevations}
-                  disabled
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-muted-foreground opacity-60"
-                >
-                  <Mountain className="h-3.5 w-3.5" />
-                  Elevation
-                </button>
-              </div>
+                  </div>
 
-              <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                {(["A4", "A3", "A1"] as const).map((size) => {
-                  const enabled = size === "A3" || size === "A1";
-                  return (
-                    <button
-                      key={size}
-                      type="button"
-                      disabled={!enabled}
-                      onClick={() => enabled && setPaperSize(size)}
-                      className={`rounded-xl px-4 py-2 transition-colors ${
-                        paperSize === size
-                          ? "bg-card text-foreground shadow-sm"
-                          : enabled
-                            ? "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
-                            : "text-muted-foreground/60"
-                      }`}
+                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                    {(["A4", "A3", "A1"] as const).map((size) => {
+                      const enabled = size === "A3" || size === "A1";
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          disabled={!enabled}
+                          onClick={() => enabled && setPaperSize(size)}
+                          className={`rounded-xl px-4 py-2 transition-colors ${
+                            paperSize === size
+                              ? "bg-card text-foreground shadow-sm"
+                              : enabled
+                                ? "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                                : "text-muted-foreground/60"
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                    {([1000, 500, 200, 100] as const).map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setScaleDenominator(value)}
+                        className={`rounded-xl px-4 py-2 transition-colors ${
+                          scaleDenominator === value
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                        }`}
+                      >
+                        1:{value}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="inline-flex items-center gap-3 rounded-2xl border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                    <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide">Parcel orientation</span>
+                    <select
+                      value={parcelHorizontalAlignment}
+                      onChange={(event) => setParcelHorizontalAlignment(event.target.value as ParcelHorizontalAlignment)}
+                      className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors"
                     >
-                      {size}
-                    </button>
-                  );
-                })}
-              </div>
+                      <option value="default">Default</option>
+                      <option value="north-side-horizontal">North side horizontal</option>
+                      <option value="south-side-horizontal">South side horizontal</option>
+                    </select>
+                  </label>
+                </>
+              ) : null}
 
-              <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                {([1000, 500, 200, 100] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setScaleDenominator(value)}
-                    className={`rounded-xl px-4 py-2 transition-colors ${
-                      scaleDenominator === value
-                        ? "bg-card text-foreground shadow-sm"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
-                    }`}
-                  >
-                    1:{value}
-                  </button>
-                ))}
-              </div>
-
-              <label className="inline-flex items-center gap-3 rounded-2xl border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
-                <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide">Parcel orientation</span>
-                <select
-                  value={parcelHorizontalAlignment}
-                  onChange={(event) => setParcelHorizontalAlignment(event.target.value as ParcelHorizontalAlignment)}
-                  className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors"
-                >
-                  <option value="default">Default</option>
-                  <option value="north-side-horizontal">North side horizontal</option>
-                  <option value="south-side-horizontal">South side horizontal</option>
-                </select>
-              </label>
-
-              <div className="ml-auto grid gap-2 sm:grid-cols-3">
+              <div className={`ml-auto grid gap-2 ${mode === "full" ? "sm:grid-cols-3" : "sm:grid-cols-1"}`}>
                 <button
                   type="button"
                   onClick={() => download("dxf")}
@@ -764,20 +772,24 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                 >
                   <Download className="h-4 w-4" />DXF
                 </button>
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground/50 opacity-60"
-                >
-                  <Download className="h-4 w-4" />KML
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground/50 opacity-60"
-                >
-                  <Download className="h-4 w-4" />GeoJSON
-                </button>
+                {mode === "full" ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground/50 opacity-60"
+                    >
+                      <Download className="h-4 w-4" />KML
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => download("geojson")}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <Download className="h-4 w-4" />GeoJSON
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
 
@@ -788,9 +800,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     {previewBounds ? (
                       <svg viewBox={`0 0 ${previewSize} ${previewSize}`} className="aspect-square w-full">
                         <rect x="0" y="0" width={previewSize} height={previewSize} fill={isDark ? "#0f172a" : "#f8fafc"} />
-                        <rect x="18" y="18" width="284" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" />
-                        <NorthArrow isDark={isDark} rotationDegrees={previewRotationDegrees} />
-                        {previewContextOts.map((item, index) => {
+                        {mode === "full" ? <rect x="18" y="18" width="284" height="284" fill="none" stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.9" /> : null}
+                        {mode === "full" ? <NorthArrow isDark={isDark} rotationDegrees={previewRotationDegrees} /> : null}
+                        {mode === "full" ? previewContextOts.map((item, index) => {
                           const ring = item.rings[0];
                           if (!ring?.length) return null;
                           const otAnchor = findBestOtLabelPoint(ring, previewParcels.map((parcelItem) => parcelItem.rings[0]).filter(Boolean)) || centroidOfRing(ring);
@@ -827,7 +839,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               </text>
                             </g>
                           );
-                        })}
+                        }) : null}
                         {previewParcels.filter((item) => !item.current).map((item) => {
                           const path = pathFromRingWithBounds(item.rings[0], previewBounds, previewSize, previewPad);
                           const center = projectPoint(centroidOfRing(item.rings[0]), previewBounds, previewSize, previewPad);
@@ -896,7 +908,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                             </g>
                           );
                         })}
-                        {(() => {
+                        {mode !== "parcel" ? (() => {
                           const otRing = previewOtRings[0];
                           if (!otRing) return null;
                           const otAnchor = findBestOtLabelPoint(otRing, previewParcels.map((parcelItem) => parcelItem.rings[0]).filter(Boolean)) || centroidOfRing(otRing);
@@ -909,8 +921,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               <text x={c.x} y={c.y + 0.5} fontSize="4.8" textAnchor="middle" dominantBaseline="middle" fill={isDark ? "#f8fafc" : "#111827"}>{label}</text>
                             </g>
                           );
-                        })()}
-                        {previewNearbyAnnotations.map((item, index) => {
+                        })() : null}
+                        {mode === "full" ? previewNearbyAnnotations.map((item, index) => {
                           if (!previewBounds) return null;
                           const p = projectPoint(item.point, previewBounds, previewSize, previewPad);
                           return (
@@ -931,8 +943,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               {item.label}
                             </text>
                           );
-                        })}
-                        {Array.from({ length: 4 }).map((_, ix) => {
+                        }) : null}
+                        {mode === "full" ? Array.from({ length: 4 }).map((_, ix) => {
                           const x = 56 + ix * 50;
                           return Array.from({ length: 4 }).map((__, iy) => {
                             const y = 52 + iy * 56;
@@ -943,8 +955,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                               </g>
                             );
                           });
-                        })}
-                        <g>
+                        }) : null}
+                        {mode === "full" ? <g>
                           <rect x="156" y="244" width="82" height="58" fill={isDark ? "#0f172a" : "#f8fafc"} stroke={isDark ? "#94a3b8" : "#64748b"} strokeWidth="0.8" />
                           <text x="162" y="252" fontSize="5.1" fill={isDark ? "#e2e8f0" : "#334155"}>ΥΠΟΜΝΗΜΑ</text>
                           <line x1="162" y1="261" x2="182" y2="261" stroke="#22c55e" strokeWidth="1.6" />
@@ -955,8 +967,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                           <text x="187" y="288" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όριο οικοπέδου</text>
                           <line x1="162" y1="297" x2="182" y2="297" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="1" strokeDasharray="5 3" />
                           <text x="187" y="300" fontSize="4.5" fill={isDark ? "#e2e8f0" : "#334155"}>όρια όμορων οικοπέδων</text>
-                        </g>
-                        <text x="224" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text>
+                        </g> : null}
+                        {mode === "full" ? <text x="224" y="20" fontSize="6" fill={isDark ? "#e2e8f0" : "#334155"}>Κλίμακα 1:{scaleDenominator}</text> : null}
                       </svg>
                     ) : null}
                   </div>
@@ -973,7 +985,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   ) : null}
                 </div>
 
-                <aside className="flex flex-col gap-3 xl:sticky xl:top-6">
+                {mode === "full" ? <aside className="flex flex-col gap-3 xl:sticky xl:top-6">
                   {showParcelData ? (
                     <Panel title="Στοιχεία Οικοπέδου">
                       <div className="grid grid-cols-[132px_1fr] gap-x-3 gap-y-1 text-sm">
@@ -1123,7 +1135,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                       </div>
                     </Panel>
                   ) : null}
-                </aside>
+                </aside> : null}
               </div>
             </div>
           </section>

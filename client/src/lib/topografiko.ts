@@ -1530,6 +1530,7 @@ export function toDXF(
     municipality?: string;
     region?: string;
     area?: number | null;
+    exportMode?: "parcel" | "ot" | "full";
     includeTitleBlock?: boolean;
     coords?: CoordinateRow[];
     paperSize?: "A4" | "A3" | "A1";
@@ -1545,8 +1546,9 @@ export function toDXF(
     parcelHorizontalAlignment?: ParcelHorizontalAlignment;
   },
 ) {
+  const exportMode = meta?.exportMode || "full";
   const writer = new DxfWriter();
-  writer.setUnits(Units.Millimeters);
+  writer.setUnits(exportMode === "full" ? Units.Millimeters : Units.Meters);
   writer.setVariable("$DWGCODEPAGE", { 3: "ANSI_1253" });
   writer.addLType("PARCEL_DASH", "Parcel boundary dash", [8, -4]);
   writer.addLayer("OT_BOUNDARY", 3, "CONTINUOUS");
@@ -1647,6 +1649,51 @@ export function toDXF(
   const mainParcel = rotatedParcels[0];
   const mainParcelPoints = stripClosingPoint(mainParcel.rings[0]);
   if (!mainParcelPoints.length) return writer.stringify();
+
+  if (exportMode !== "full") {
+    const drawWorldRing = (
+      ring: Point[],
+      options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number },
+    ) => {
+      const points = stripClosingPoint(ring);
+      if (points.length < 2) return;
+      points.forEach((start, index) => {
+        const end = points[(index + 1) % points.length];
+        addDxfLine(writer, start, end, options);
+      });
+    };
+
+    const otReferencePoints = rotatedOtRings.flatMap((ring) => stripClosingPoint(ring));
+    const parcelReferencePoints = rotatedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring)));
+    const referencePoints = exportMode === "ot" && otReferencePoints.length ? otReferencePoints : parcelReferencePoints;
+    const referenceBounds = boundsFromPoints(referencePoints.length ? referencePoints : mainParcelPoints);
+    const worldSpan = Math.max(referenceBounds.maxX - referenceBounds.minX, referenceBounds.maxY - referenceBounds.minY, 1);
+    const mainTextHeight = Math.min(Math.max(worldSpan * 0.03, 1.2), 6);
+    const secondaryTextHeight = Math.max(mainTextHeight * 0.72, 0.9);
+
+    if (exportMode === "ot") {
+      rotatedOtRings.forEach((ring) => drawWorldRing(ring, { layerName: "OT_BOUNDARY", colorNumber: 3 }));
+      rotatedParcels
+        .filter((parcel) => parcel.kaek !== mainParcel.kaek)
+        .forEach((parcel) => {
+          parcel.rings.forEach((ring) => drawWorldRing(ring, { layerName: "PARCEL_ADJ", colorNumber: 8 }));
+          const center = centroidOfRing(parcel.rings[0] || []);
+          addCenteredDxfText(writer, center.x, center.y, secondaryTextHeight, parcel.kaek, {
+            layerName: "ANNOTATION",
+            colorNumber: 8,
+          });
+        });
+    }
+
+    mainParcel.rings.forEach((ring) => drawWorldRing(ring, { layerName: "PARCEL_MAIN", colorNumber: 7 }));
+    const mainCenter = centroidOfRing(mainParcel.rings[0]);
+    addCenteredDxfText(writer, mainCenter.x, mainCenter.y, mainTextHeight, meta?.kaek || mainParcel.kaek, {
+      layerName: "ANNOTATION",
+      colorNumber: 7,
+    });
+
+    return writer.stringify();
+  }
 
   const fitPoints = rotatedOtRings.flatMap((ring) => stripClosingPoint(ring));
   const referencePoints = fitPoints.length
