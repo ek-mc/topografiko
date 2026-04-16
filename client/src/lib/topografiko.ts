@@ -1531,6 +1531,7 @@ export function toDXF(
     region?: string;
     area?: number | null;
     exportMode?: "parcel" | "ot" | "full";
+    exportUnits?: "millimeters" | "meters";
     includeTitleBlock?: boolean;
     coords?: CoordinateRow[];
     paperSize?: "A4" | "A3" | "A1";
@@ -1547,8 +1548,9 @@ export function toDXF(
   },
 ) {
   const exportMode = meta?.exportMode || "full";
+  const exportUnits = exportMode === "full" ? (meta?.exportUnits || "millimeters") : "meters";
   const writer = new DxfWriter();
-  writer.setUnits(exportMode === "full" ? Units.Millimeters : Units.Meters);
+  writer.setUnits(exportUnits === "meters" ? Units.Meters : Units.Millimeters);
   writer.setVariable("$DWGCODEPAGE", { 3: "ANSI_1253" });
   writer.addLType("PARCEL_DASH", "Parcel boundary dash", [8, -4]);
   writer.addLayer("OT_BOUNDARY", 3, "CONTINUOUS");
@@ -1630,20 +1632,22 @@ export function toDXF(
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
   const includeTitleBlock = Boolean(meta?.includeTitleBlock);
+  const outputUnitFactor = exportUnits === "meters" ? 0.001 : 1;
   const paperConfig = paperSize === "A1"
     ? { width: 841, height: 594, outerMargin: 12, frameGap: 2.5, gutter: 10, titleBlockWidth: 204, textFactor: 1.65 }
     : paperSize === "A3"
       ? { width: 420, height: 297, outerMargin: 8, frameGap: 2, gutter: 6, titleBlockWidth: 126, textFactor: 1 }
       : { width: 297, height: 210, outerMargin: 6, frameGap: 1.5, gutter: 5, titleBlockWidth: 96, textFactor: 0.88 };
-  const paper = { width: paperConfig.width, height: paperConfig.height };
-  const mm = (value: number) => value * paperConfig.textFactor;
+  const u = (value: number) => value * outputUnitFactor;
+  const paper = { width: u(paperConfig.width), height: u(paperConfig.height) };
+  const mm = (value: number) => value * paperConfig.textFactor * outputUnitFactor;
   const drawWin = {
-    x0: paperConfig.outerMargin + mm(paperConfig.frameGap),
-    y0: paperConfig.outerMargin + mm(paperConfig.frameGap),
+    x0: u(paperConfig.outerMargin) + mm(paperConfig.frameGap),
+    y0: u(paperConfig.outerMargin) + mm(paperConfig.frameGap),
     x1: includeTitleBlock
-      ? paper.width - paperConfig.outerMargin - paperConfig.titleBlockWidth - paperConfig.gutter
-      : paper.width - paperConfig.outerMargin - mm(paperConfig.frameGap),
-    y1: paper.height - paperConfig.outerMargin - mm(paperConfig.frameGap),
+      ? paper.width - u(paperConfig.outerMargin) - u(paperConfig.titleBlockWidth) - u(paperConfig.gutter)
+      : paper.width - u(paperConfig.outerMargin) - mm(paperConfig.frameGap),
+    y1: paper.height - u(paperConfig.outerMargin) - mm(paperConfig.frameGap),
   };
 
   const mainParcel = rotatedParcels[0];
@@ -1706,7 +1710,7 @@ export function toDXF(
   const worldSpanY = Math.max(fitBounds.maxY - fitBounds.minY, 1);
   const winWidth = drawWin.x1 - drawWin.x0;
   const winHeight = drawWin.y1 - drawWin.y0;
-  const requestedScale = 1000 / scaleDenominator;
+  const requestedScale = (exportUnits === "meters" ? 1 : 1000) / scaleDenominator;
   const fitPadding = 0.018;
   const fitScale = Math.min((winWidth * (1 - fitPadding * 2)) / worldSpanX, (winHeight * (1 - fitPadding * 2)) / worldSpanY);
   const scale = Math.min(requestedScale, fitScale);
@@ -2231,10 +2235,10 @@ export function toDXF(
   });
 
   if (includeTitleBlock) {
-    const x0 = drawWin.x1 + paperConfig.gutter;
-    const x1 = paper.width - paperConfig.outerMargin;
-    const y0 = paperConfig.outerMargin;
-    const y1 = paper.height - paperConfig.outerMargin;
+    const x0 = drawWin.x1 + u(paperConfig.gutter);
+    const x1 = paper.width - u(paperConfig.outerMargin);
+    const y0 = u(paperConfig.outerMargin);
+    const y1 = paper.height - u(paperConfig.outerMargin);
     const dateText = new Intl.DateTimeFormat("el-GR", { month: "long", year: "numeric" })
       .format(new Date())
       .toUpperCase()

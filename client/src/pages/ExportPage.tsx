@@ -206,6 +206,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
   ));
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
+  const [fullExportUnits, setFullExportUnits] = useState<"millimeters" | "meters">("millimeters");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
   const [showElevations, setShowElevations] = useState(false);
@@ -568,7 +569,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     const parcels = exportParcels.map((p) => ({ kaek: p.kaek, rings: p.rings, relation: p.relation }));
     const modeLabel = mode === "parcel" ? "parcel" : mode === "ot" ? "ot" : "full";
     const base = mode === "full"
-      ? `${parcel.kaek}-${paperSize.toLowerCase()}-1-${scaleDenominator}-${modeLabel}`
+      ? `${parcel.kaek}-${paperSize.toLowerCase()}-1-${scaleDenominator}-${modeLabel}${fullExportUnits === "meters" ? "-meters" : ""}`
       : `${parcel.kaek}-${modeLabel}-meters`;
     const regionName = resolveRegionFromParcel(parcel);
 
@@ -590,6 +591,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           region: regionName,
           area: parcel.area,
           exportMode: mode,
+          exportUnits: mode === "full" ? fullExportUnits : "meters",
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
           nearbyAnnotations: showNearbyLabels ? nearbyAnnotations : [],
@@ -609,6 +611,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     }
 
   };
+
+  const fullDxfLabel = mode === "full" && fullExportUnits === "meters" ? "DXF (m)" : "DXF";
 
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground transition-colors">
@@ -733,6 +737,26 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   </div>
 
                   <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                    {([
+                      ["millimeters", "mm"],
+                      ["meters", "m"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setFullExportUnits(value)}
+                        className={`rounded-xl px-4 py-2 transition-colors ${
+                          fullExportUnits === value
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
                     {([1000, 500, 200, 100] as const).map((value) => (
                       <button
                         key={value}
@@ -770,7 +794,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   onClick={() => download("dxf")}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
-                  <Download className="h-4 w-4" />DXF
+                  <Download className="h-4 w-4" />{fullDxfLabel}
                 </button>
                 {mode === "full" ? (
                   <>
