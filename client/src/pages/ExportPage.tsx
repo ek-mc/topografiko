@@ -206,7 +206,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
     Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
   ));
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
-  const [fullExportUnits, setFullExportUnits] = useState<"millimeters" | "meters">("millimeters");
+  const [fullExportUnits, setFullExportUnits] = useState<"paper" | "meters">("paper");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
   const [showElevations, setShowElevations] = useState(false);
@@ -591,7 +591,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           region: regionName,
           area: parcel.area,
           exportMode: mode,
-          exportUnits: mode === "full" ? fullExportUnits : "meters",
+          exportUnits: mode === "full" ? (fullExportUnits === "meters" ? "meters" : "millimeters") : "meters",
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
           nearbyAnnotations: showNearbyLabels ? nearbyAnnotations : [],
@@ -612,7 +612,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
   };
 
-  const fullDxfLabel = mode === "full" && fullExportUnits === "meters" ? "DXF (m)" : "DXF";
+  const isFullMetersMode = mode === "full" && fullExportUnits === "meters";
+  const fullDxfLabel = isFullMetersMode ? "DXF (real m)" : "DXF";
 
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground transition-colors">
@@ -714,6 +715,26 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   </div>
 
                   <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                    {([
+                      ["paper", "Fit to paper"],
+                      ["meters", "Real size (m)"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setFullExportUnits(value)}
+                        className={`rounded-xl px-4 py-2 transition-colors ${
+                          fullExportUnits === value
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {fullExportUnits === "paper" ? <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
                     {(["A4", "A3", "A1"] as const).map((size) => {
                       const enabled = size === "A3" || size === "A1";
                       return (
@@ -734,29 +755,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         </button>
                       );
                     })}
-                  </div>
+                  </div> : null}
 
-                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                    {([
-                      ["millimeters", "mm"],
-                      ["meters", "m"],
-                    ] as const).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setFullExportUnits(value)}
-                        className={`rounded-xl px-4 py-2 transition-colors ${
-                          fullExportUnits === value
-                            ? "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                  {fullExportUnits === "paper" ? <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
                     {([1000, 500, 200, 100] as const).map((value) => (
                       <button
                         key={value}
@@ -771,7 +772,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         1:{value}
                       </button>
                     ))}
-                  </div>
+                  </div> : null}
 
                   <label className="inline-flex items-center gap-3 rounded-2xl border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
                     <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide">Parcel orientation</span>

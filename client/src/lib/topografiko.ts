@@ -1654,6 +1654,93 @@ export function toDXF(
   const mainParcelPoints = stripClosingPoint(mainParcel.rings[0]);
   if (!mainParcelPoints.length) return writer.stringify();
 
+  if (exportMode === "full" && exportUnits === "meters") {
+    const drawWorldRing = (
+      ring: Point[],
+      options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number },
+    ) => {
+      const points = stripClosingPoint(ring);
+      if (points.length < 2) return;
+      points.forEach((start, index) => {
+        const end = points[(index + 1) % points.length];
+        addDxfLine(writer, start, end, options);
+      });
+    };
+
+    const drawWorldPath = (
+      path: Point[],
+      options?: { layerName?: string; lineType?: string; lineTypeScale?: number; colorNumber?: number },
+    ) => {
+      const points = stripClosingPoint(path);
+      if (points.length < 2) return;
+      points.slice(0, -1).forEach((start, index) => {
+        const end = points[index + 1];
+        addDxfLine(writer, start, end, options);
+      });
+    };
+
+    const referencePoints = [
+      ...rotatedContextOts.flatMap((ot) => ot.rings.flatMap((ring) => stripClosingPoint(ring))),
+      ...rotatedOtRings.flatMap((ring) => stripClosingPoint(ring)),
+      ...rotatedParcels.flatMap((parcel) => parcel.rings.flatMap((ring) => stripClosingPoint(ring))),
+    ];
+    const referenceBounds = boundsFromPoints(referencePoints.length ? referencePoints : mainParcelPoints);
+    const worldSpan = Math.max(referenceBounds.maxX - referenceBounds.minX, referenceBounds.maxY - referenceBounds.minY, 1);
+    const mainTextHeight = Math.min(Math.max(worldSpan * 0.03, 1.2), 6);
+    const secondaryTextHeight = Math.max(mainTextHeight * 0.72, 0.9);
+
+    rotatedContextOts.forEach((ot) => {
+      ot.rings.forEach((ring) => drawWorldRing(ring, { layerName: "OT_CONTEXT", colorNumber: 8 }));
+      if (ot.otNumber && ot.rings[0]?.length) {
+        const anchor = findBestOtLabelPoint(ot.rings[0], rotatedParcels.flatMap((parcel) => parcel.rings)) || centroidOfRing(ot.rings[0]);
+        addCenteredDxfText(writer, anchor.x, anchor.y, secondaryTextHeight, `Ο.Τ. ${ot.otNumber}`, {
+          layerName: "OT_LABELS",
+          colorNumber: 8,
+        });
+      }
+    });
+
+    rotatedUrbanLines.forEach((path) => drawWorldPath(path, { layerName: "OT_BOUNDARY", colorNumber: 3 }));
+    rotatedBuildingLines.forEach((path) => drawWorldPath(path, { layerName: "BUILDING_LINE", colorNumber: 1 }));
+    rotatedOtRings.forEach((ring) => drawWorldRing(ring, { layerName: "OT_BOUNDARY", colorNumber: 3 }));
+
+    rotatedParcels
+      .filter((parcel) => parcel.kaek !== mainParcel.kaek)
+      .forEach((parcel) => {
+        parcel.rings.forEach((ring) => drawWorldRing(ring, { layerName: "PARCEL_ADJ", colorNumber: 8 }));
+        const center = centroidOfRing(parcel.rings[0] || []);
+        addCenteredDxfText(writer, center.x, center.y, secondaryTextHeight, parcel.kaek, {
+          layerName: "PARCEL_LABELS",
+          colorNumber: 8,
+        });
+      });
+
+    mainParcel.rings.forEach((ring) => drawWorldRing(ring, { layerName: "PARCEL_MAIN", colorNumber: 7 }));
+    const mainCenter = centroidOfRing(mainParcel.rings[0]);
+    addCenteredDxfText(writer, mainCenter.x, mainCenter.y, mainTextHeight, meta?.kaek || mainParcel.kaek, {
+      layerName: "PARCEL_LABELS",
+      colorNumber: 7,
+    });
+
+    if (meta?.ot && rotatedOtRings[0]?.length) {
+      const anchor = findBestOtLabelPoint(rotatedOtRings[0], rotatedParcels.flatMap((parcel) => parcel.rings)) || centroidOfRing(rotatedOtRings[0]);
+      addCenteredDxfText(writer, anchor.x, anchor.y + secondaryTextHeight * 1.4, secondaryTextHeight, `Ο.Τ. ${meta.ot}`, {
+        layerName: "OT_LABELS",
+        colorNumber: 7,
+      });
+    }
+
+    rotatedNearbyAnnotations.forEach((item) => {
+      addCenteredDxfText(writer, item.point.x, item.point.y, secondaryTextHeight, item.label, {
+        layerName: "ANNOTATION",
+        colorNumber: 3,
+        rotation: typeof item.rotationDegrees === "number" ? normalizeHorizontalRotation(item.rotationDegrees) : undefined,
+      });
+    });
+
+    return writer.stringify();
+  }
+
   if (exportMode !== "full") {
     const drawWorldRing = (
       ring: Point[],
