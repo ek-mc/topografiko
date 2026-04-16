@@ -1632,7 +1632,8 @@ export function toDXF(
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
   const includeTitleBlock = Boolean(meta?.includeTitleBlock);
-  const outputUnitFactor = exportUnits === "meters" ? 0.001 : 1;
+  const isRealSizeMeters = exportMode === "full" && exportUnits === "meters";
+  const outputUnitFactor = isRealSizeMeters ? scaleDenominator / 1000 : 1;
   const paperConfig = paperSize === "A1"
     ? { width: 841, height: 594, outerMargin: 12, frameGap: 2.5, gutter: 10, titleBlockWidth: 204, textFactor: 1.65 }
     : paperSize === "A3"
@@ -1710,7 +1711,7 @@ export function toDXF(
   const worldSpanY = Math.max(fitBounds.maxY - fitBounds.minY, 1);
   const winWidth = drawWin.x1 - drawWin.x0;
   const winHeight = drawWin.y1 - drawWin.y0;
-  const requestedScale = (exportUnits === "meters" ? 1 : 1000) / scaleDenominator;
+  const requestedScale = isRealSizeMeters ? 1 : 1000 / scaleDenominator;
   const fitPadding = 0.018;
   const fitScale = Math.min((winWidth * (1 - fitPadding * 2)) / worldSpanX, (winHeight * (1 - fitPadding * 2)) / worldSpanY);
   const scale = Math.min(requestedScale, fitScale);
