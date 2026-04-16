@@ -734,7 +734,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                     ))}
                   </div>
 
-                  {fullExportUnits === "paper" ? <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
                     {(["A4", "A3", "A1"] as const).map((size) => {
                       const enabled = size === "A3" || size === "A1";
                       return (
@@ -755,9 +755,9 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         </button>
                       );
                     })}
-                  </div> : null}
+                  </div>
 
-                  {fullExportUnits === "paper" ? <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
+                  <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
                     {([1000, 500, 200, 100] as const).map((value) => (
                       <button
                         key={value}
@@ -772,7 +772,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                         1:{value}
                       </button>
                     ))}
-                  </div> : null}
+                  </div>
 
                   <label className="inline-flex items-center gap-3 rounded-2xl border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
                     <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide">Parcel orientation</span>
