@@ -1534,7 +1534,7 @@ export function toDXF(
     exportUnits?: "millimeters" | "meters";
     includeTitleBlock?: boolean;
     coords?: CoordinateRow[];
-    paperSize?: "A4" | "A3" | "A1";
+    paperSize?: "A4" | "A3" | "A2" | "A1" | "A0";
     scaleDenominator?: number;
     otRings?: Point[][];
     contextOts?: TEEData[];
@@ -1634,11 +1634,15 @@ export function toDXF(
   const includeTitleBlock = Boolean(meta?.includeTitleBlock);
   const isRealSizeMeters = exportMode === "full" && exportUnits === "meters";
   const outputUnitFactor = isRealSizeMeters ? scaleDenominator / 1000 : 1;
-  const paperConfig = paperSize === "A1"
-    ? { width: 841, height: 594, outerMargin: 12, frameGap: 2.5, gutter: 10, titleBlockWidth: 204, textFactor: 1.65 }
-    : paperSize === "A3"
-      ? { width: 420, height: 297, outerMargin: 8, frameGap: 2, gutter: 6, titleBlockWidth: 126, textFactor: 1 }
-      : { width: 297, height: 210, outerMargin: 6, frameGap: 1.5, gutter: 5, titleBlockWidth: 96, textFactor: 0.88 };
+  const paperConfig = paperSize === "A0"
+    ? { width: 1189, height: 841, outerMargin: 14, frameGap: 3, gutter: 12, titleBlockWidth: 256, textFactor: 2.1 }
+    : paperSize === "A1"
+      ? { width: 841, height: 594, outerMargin: 12, frameGap: 2.5, gutter: 10, titleBlockWidth: 204, textFactor: 1.65 }
+      : paperSize === "A2"
+        ? { width: 594, height: 420, outerMargin: 10, frameGap: 2.2, gutter: 8, titleBlockWidth: 160, textFactor: 1.3 }
+        : paperSize === "A3"
+          ? { width: 420, height: 297, outerMargin: 8, frameGap: 2, gutter: 6, titleBlockWidth: 126, textFactor: 1 }
+          : { width: 297, height: 210, outerMargin: 6, frameGap: 1.5, gutter: 5, titleBlockWidth: 96, textFactor: 0.88 };
   const u = (value: number) => value * outputUnitFactor;
   const paper = { width: u(paperConfig.width), height: u(paperConfig.height) };
   const mm = (value: number) => value * paperConfig.textFactor * outputUnitFactor;
@@ -2248,7 +2252,15 @@ export function toDXF(
       .normalize("NFC");
     const labelX = x0 + mm(4);
     const valueX = x0 + mm(37);
-    const titlePanelHeight = paperSize === "A1" ? mm(96) : paperSize === "A4" ? mm(74) : mm(88);
+    const titlePanelHeight = paperSize === "A0"
+      ? mm(108)
+      : paperSize === "A1"
+        ? mm(96)
+        : paperSize === "A2"
+          ? mm(92)
+          : paperSize === "A4"
+            ? mm(74)
+            : mm(88);
     const titlePanelInset = mm(2);
     const titlePanelX0 = x0 + titlePanelInset;
     const titlePanelX1 = x1 - titlePanelInset;

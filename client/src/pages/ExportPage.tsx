@@ -205,7 +205,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [activeDeclarations, setActiveDeclarations] = useState<Record<string, boolean>>(() => (
     Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
   ));
-  const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A1">("A1");
+  const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A2" | "A1" | "A0">("A1");
   const [fullExportUnits, setFullExportUnits] = useState<"paper" | "meters">("paper");
   const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
@@ -735,8 +735,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   </div>
 
                   <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                    {(["A4", "A3", "A1"] as const).map((size) => {
-                      const enabled = size === "A3" || size === "A1";
+                    {(["A4", "A3", "A2", "A1", "A0"] as const).map((size) => {
+                      const enabled = size !== "A4";
                       return (
                         <button
                           key={size}
