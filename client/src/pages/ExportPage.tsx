@@ -207,7 +207,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   ));
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A2" | "A1" | "A0">("A1");
   const [fullExportUnits, setFullExportUnits] = useState<"paper" | "meters">("paper");
-  const [scaleDenominator, setScaleDenominator] = useState<100 | 200 | 500 | 1000>(200);
+  const [scaleDenominator, setScaleDenominator] = useState<50 | 100 | 200 | 500 | 1000>(200);
   const [parcelHorizontalAlignment, setParcelHorizontalAlignment] = useState<ParcelHorizontalAlignment>("default");
   const [showElevations, setShowElevations] = useState(false);
   const [elevationsLoading, setElevationsLoading] = useState(false);
@@ -758,7 +758,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                   </div>
 
                   <div className="inline-flex rounded-2xl border border-border bg-muted/60 p-1 text-sm">
-                    {([1000, 500, 200, 100] as const).map((value) => (
+                    {([1000, 500, 200, 100, 50] as const).map((value) => (
                       <button
                         key={value}
                         type="button"
