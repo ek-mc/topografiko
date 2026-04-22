@@ -28,10 +28,6 @@ pnpm check
 pnpm build
 ```
 
-## Data note
-
-This project uses public geospatial sources for informational use.
-It is not a legal extract service.
 
 ## Stack
 
