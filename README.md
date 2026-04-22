@@ -79,8 +79,3 @@ The project is organized as a static React frontend. The most relevant files for
 | `architecture.md` | Internal design and implementation note |
 | `ideas.md` | Initial visual direction exploration |
 
-## Current limitations
-
-This version is intentionally conservative. It demonstrates a working parcel-centric academic interface, but it does not yet offer a full live-production parcel retrieval pipeline across all possible KAEK values. The present implementation is therefore best understood as a strong presentation-ready prototype and architecture basis for a more complete future tool.
-
-Possible next steps include broader live retrieval from official interoperable services, richer coordinate-input modes, additional parcel overlays, and more advanced CAD export options.
