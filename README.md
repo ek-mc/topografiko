@@ -1,17 +1,8 @@
 # topografiko
 
-**topografiko** is a React-based academic web application for parcel lookup, map inspection, and local geospatial export. It presents a simple map-first interface centered on KAEK-based search, compact source disclosure, and browser-side generation of **DXF**, **GeoJSON**, and **KML** outputs.
+Lightweight KAEK parcel viewer with browser-side export to **DXF**, **GeoJSON**, and **KML**.
 
-The application is intentionally designed for **educational and informational use**. It identifies official public-sector geospatial sources clearly, keeps the interface lightweight, avoids third-party tracking scripts, and performs file exports locally in the browser.
-
-| Aspect | Description |
-| --- | --- |
-| Purpose | Academic parcel lookup and export prototype |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS |
-| Mapping | Leaflet with selectable official cadastre, satellite, and OSM basemaps |
-| Export formats | DXF, GeoJSON, KML |
-| Privacy model | No analytics, no tracking beacons, no Google Maps |
-| Search mode | KAEK search against a clearly identified demo parcel dataset |
+Built with React + Leaflet for educational/informational use, with no analytics or tracking scripts.
 
 ## Public data sources
 
