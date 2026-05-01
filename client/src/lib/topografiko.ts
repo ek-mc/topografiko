@@ -1523,6 +1523,42 @@ function buildParcelEdgeLabels(points: Point[]) {
   });
 }
 
+function splitSegmentOutsideRingsSampled(start: Point, end: Point, rings: Point[][], samples = 28) {
+  if (!rings.length) return [{ start, end }];
+  const outsideAt = (t: number) => {
+    const p = { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+    return !rings.some((ring) => pointInRing(p, stripClosingPoint(ring)));
+  };
+
+  const ranges: Array<{ t0: number; t1: number }> = [];
+  let inOutside = outsideAt(0);
+  let rangeStart = inOutside ? 0 : -1;
+
+  for (let i = 1; i <= samples; i += 1) {
+    const t = i / samples;
+    const nowOutside = outsideAt(t);
+    if (!inOutside && nowOutside) {
+      rangeStart = t;
+    }
+    if (inOutside && !nowOutside && rangeStart >= 0) {
+      ranges.push({ t0: rangeStart, t1: t });
+      rangeStart = -1;
+    }
+    inOutside = nowOutside;
+  }
+
+  if (inOutside && rangeStart >= 0) {
+    ranges.push({ t0: rangeStart, t1: 1 });
+  }
+
+  return ranges
+    .filter((r) => r.t1 - r.t0 > 1e-3)
+    .map((r) => ({
+      start: { x: start.x + (end.x - start.x) * r.t0, y: start.y + (end.y - start.y) * r.t0 },
+      end: { x: start.x + (end.x - start.x) * r.t1, y: start.y + (end.y - start.y) * r.t1 },
+    }));
+}
+
 function drawPolygonHatch(
   writer: DxfWriter,
   polygon: Point[],
@@ -1533,6 +1569,7 @@ function drawPolygonHatch(
     colorNumber?: number;
     clipRect?: { minX: number; minY: number; maxX: number; maxY: number };
     maskRect?: { minX: number; minY: number; maxX: number; maxY: number };
+    excludeRings?: Point[][];
   },
 ) {
   const ring = stripClosingPoint(polygon);
@@ -1594,9 +1631,12 @@ function drawPolygonHatch(
         : [{ start: clipped.start, end: clipped.end }];
 
       visibleSegments.forEach((segment) => {
-        addDxfLine(writer, segment.start, segment.end, {
-          layerName: options.layerName,
-          colorNumber: options.colorNumber,
+        const outsideSegments = splitSegmentOutsideRingsSampled(segment.start, segment.end, options.excludeRings || []);
+        outsideSegments.forEach((outside) => {
+          addDxfLine(writer, outside.start, outside.end, {
+            layerName: options.layerName,
+            colorNumber: options.colorNumber,
+          });
         });
       });
     }
@@ -2061,6 +2101,8 @@ export function toDXF(
       maxY: footprint[0].y,
     });
   };
+  const parcelMaskRings = rotatedParcels.flatMap((parcel) => parcel.rings.map((ring) => stripClosingPoint(ring).map(toSheet)));
+
   const hatchableFootprints = rawSheetNearbyAnnotations
     .filter((item) => item.footprint?.length)
     .filter((item) => {
@@ -2078,6 +2120,7 @@ export function toDXF(
       colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
       clipRect,
       maskRect: legendMaskRect,
+      excludeRings: parcelMaskRings,
     });
   });
 
