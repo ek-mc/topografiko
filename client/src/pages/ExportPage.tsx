@@ -667,28 +667,29 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
               {mode === "full" ? (
                 <>
-                  <div className="inline-flex flex-wrap gap-2 text-sm">
-                      {[
-                      { state: showCoords, setter: setShowCoords, label: "Συντεταγμένες" },
-                      { state: showParcelData, setter: setShowParcelData, label: "Στοιχεία" },
-                      { state: showLegend, setter: setShowLegend, label: "Υπόμνημα" },
-                      { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
-                      { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
-                      { state: showNearbyLabels, setter: setShowNearbyLabels, label: "Κ.Π. / ΠΕΖΟΔΡΟΜΟΣ" },
-                      { state: hatchPedestrianRoads, setter: setHatchPedestrianRoads, label: "Hatch πεζόδρομος" },
-                      { state: hatchGreenAreas, setter: setHatchGreenAreas, label: "Hatch πράσινο" },
-                    ].map(({ state, setter, label }) => (
+                  <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                    {[
+                      { state: showCoords, setter: setShowCoords, label: "Συντεταγμένες", info: "Πίνακας κορυφών + εμβαδό" },
+                      { state: showParcelData, setter: setShowParcelData, label: "Στοιχεία", info: "KAEK, Ο.Τ., εμβαδό, περίμετρος" },
+                      { state: showLegend, setter: setShowLegend, label: "Υπόμνημα", info: "Γραμμές/σύμβολα σχεδίου" },
+                      { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block", info: "Πλαίσιο στοιχείων σχεδίου" },
+                      { state: showTerms, setter: setShowTerms, label: "Όροι / Notes", info: "Όροι δόμησης + δηλώσεις" },
+                      { state: showNearbyLabels, setter: setShowNearbyLabels, label: "Κ.Π. / ΠΕΖΟΔΡΟΜΟΣ", info: "Text labels για nearby χρήσεις" },
+                      { state: hatchPedestrianRoads, setter: setHatchPedestrianRoads, label: "Hatch πεζόδρομος", info: "Γραμμοσκίαση πεζοδρόμων" },
+                      { state: hatchGreenAreas, setter: setHatchGreenAreas, label: "Hatch πράσινο", info: "Γραμμοσκίαση Κ.Π./πρασίνου" },
+                    ].map(({ state, setter, label, info }) => (
                       <button
                         key={label}
                         type="button"
                         onClick={() => setter((v) => !v)}
-                        className={`rounded-full border px-3 py-1.5 transition-colors ${
+                        className={`rounded-xl border px-3 py-2 text-left transition-colors ${
                           state
                             ? "border-blue-300 bg-blue-500/10 text-blue-700 dark:border-blue-400/40 dark:bg-blue-400/15 dark:text-blue-200"
                             : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                         }`}
                       >
-                        {label}
+                        <div className="text-sm font-medium">{label}</div>
+                        <div className="text-[11px] opacity-80">{info}</div>
                       </button>
                     ))}
                     {DEFAULT_DECLARATION_TEMPLATES.map((item) => {
@@ -805,7 +806,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
             <div className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors lg:p-5">
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="space-y-4">
+                <div className="hidden space-y-4">
                   <div className="relative overflow-hidden rounded-xl border border-border bg-muted/40 shadow-inner transition-colors">
                     {previewBounds ? (
                       <svg viewBox={`0 0 ${previewSize} ${previewSize}`} className="aspect-square w-full">
