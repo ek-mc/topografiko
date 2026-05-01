@@ -1743,6 +1743,8 @@ export function toDXF(
   const hatchPedestrianRoads = meta?.hatchPedestrianRoads ?? true;
   const hatchGreenAreas = meta?.hatchGreenAreas ?? true;
   const includeNearbyText = meta?.includeNearbyText ?? false;
+  const hideParcelNamesForScale = exportMode === "full" && scaleDenominator > 200;
+  const hideSideLabelsForScale = exportMode === "full" && scaleDenominator > 200;
   const isRealSizeMeters = exportMode === "full" && exportUnits === "meters";
   const outputUnitFactor = isRealSizeMeters ? scaleDenominator / 1000 : 1;
   const paperConfig = paperSize === "A0"
@@ -2007,7 +2009,7 @@ export function toDXF(
       });
     });
     const labelPoint = toSheet(centroidOfRing(parcel.rings[0] || []));
-    if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
+    if (!hideParcelNamesForScale && labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
       const labelHeight = fittedLabelHeightForRing(parcel.rings[0] || [], parcel.kaek, mm(1.2), mm(0.8));
       addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), labelHeight, parcel.kaek, {
         layerName: "ANNOTATION",
@@ -2022,8 +2024,10 @@ export function toDXF(
     addMaskedSheetLine(start, end, { layerName: "PARCEL_MAIN", colorNumber: 7 });
   });
   const mainLabelPoint = toSheet(centroidOfRing(mainParcel.rings[0]));
-  const mainLabelHeight = fittedLabelHeightForRing(mainParcel.rings[0], mainParcel.kaek, mm(1.8), mm(1.0));
-  addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mainLabelHeight, mainParcel.kaek, { layerName: "ANNOTATION" });
+  if (!hideParcelNamesForScale) {
+    const mainLabelHeight = fittedLabelHeightForRing(mainParcel.rings[0], mainParcel.kaek, mm(1.8), mm(1.0));
+    addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mainLabelHeight, mainParcel.kaek, { layerName: "ANNOTATION" });
+  }
 
   const otBlockedRects = [
     ...rotatedContextOts.flatMap((ot) => ot.rings.slice(0, 1)),
@@ -2160,7 +2164,8 @@ export function toDXF(
   const parcelSheetPoints = mainParcelPoints.map(toSheet);
   const parcelCenter = centroidOfRing(parcelSheetPoints);
 
-  buildParcelEdgeLabels(mainParcelPoints).forEach((edge, index) => {
+  if (!hideSideLabelsForScale) {
+    buildParcelEdgeLabels(mainParcelPoints).forEach((edge, index) => {
     const start = parcelSheetPoints[index];
     const end = parcelSheetPoints[(index + 1) % parcelSheetPoints.length];
     const vertex = start;
@@ -2213,7 +2218,8 @@ export function toDXF(
       layerName: "PARCEL_LABELS",
       colorNumber: 7,
     });
-  });
+    });
+  }
 
   const labelObstacleSegments: Array<{ start: Point; end: Point }> = [];
   const addObstaclePath = (path: Point[], closed = false) => {
