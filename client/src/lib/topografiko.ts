@@ -287,6 +287,38 @@ function pointInAnyRing(point: Point, rings: Point[][]) {
   return rings.some((ring) => pointInRing(point, ring));
 }
 
+function pointInPolygon(point: Point, polygon: Point[]) {
+  return pointInRing(point, polygon);
+}
+
+function polygonCentroid(points: Point[]) {
+  const pts = stripClosingPoint(points);
+  if (!pts.length) return null;
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < pts.length; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const cross = a.x * b.y - b.x * a.y;
+    area += cross;
+    cx += (a.x + b.x) * cross;
+    cy += (a.y + b.y) * cross;
+  }
+  if (Math.abs(area) < 1e-9) return centroidOfRing(pts);
+  return { x: cx / (3 * area), y: cy / (3 * area) };
+}
+
+function polygonsStronglyOverlap(a: Point[], b: Point[]) {
+  const aPts = stripClosingPoint(a);
+  const bPts = stripClosingPoint(b);
+  if (aPts.length < 3 || bPts.length < 3) return false;
+  const ca = polygonCentroid(aPts);
+  const cb = polygonCentroid(bPts);
+  if (!ca || !cb) return false;
+  return pointInPolygon(ca, bPts) || pointInPolygon(cb, aPts);
+}
+
 export function findBestOtLabelPoint(sourceRing: Point[], avoidRings: Point[][] = []) {
   const ringWorld = stripClosingPoint(sourceRing);
   if (ringWorld.length < 3) return null;
@@ -2106,11 +2138,30 @@ export function toDXF(
   const hatchableFootprints = rawSheetNearbyAnnotations
     .filter((item) => item.footprint?.length)
     .filter((item) => {
-      if (item.kind === "pedestrian-road") return hatchPedestrianRoads;
+      if (item.kind === "pedestrian-road") return false; // προσωρινό: αφαιρούμε πεζόδρομους
       return hatchGreenAreas;
+    })
+    .filter((item, index, all) => {
+      if (item.kind !== "public-use" || !item.footprint?.length) return true;
+      return !all.some((other, otherIndex) => {
+        if (otherIndex === index) return false;
+        if (other.kind !== "pedestrian-road" || !other.footprint?.length) return false;
+        return polygonsStronglyOverlap(item.footprint, other.footprint);
+      });
     });
 
-  hatchableFootprints.forEach((item) => {
+  const otMaskRings = [
+    ...rotatedOtRings,
+    ...rotatedContextOts.flatMap((ot) => ot.rings),
+  ].map((ring) => stripClosingPoint(ring).map(toSheet));
+
+  const prioritizedHatchables = [...hatchableFootprints].sort((a, b) => {
+    if (a.kind === b.kind) return 0;
+    return a.kind === "pedestrian-road" ? -1 : 1;
+  });
+
+  const drawnHatchRings: Point[][] = [];
+  prioritizedHatchables.forEach((item) => {
     const ring = stripClosingPoint(item.footprint || []);
     if (ring.length < 3) return;
     drawPolygonHatch(writer, ring, {
@@ -2120,8 +2171,9 @@ export function toDXF(
       colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
       clipRect,
       maskRect: legendMaskRect,
-      excludeRings: parcelMaskRings,
+      excludeRings: [...parcelMaskRings, ...otMaskRings, ...drawnHatchRings],
     });
+    drawnHatchRings.push(ring);
   });
 
   const nearbyPlacementQueue = [...rawSheetNearbyAnnotations].sort((a, b) => {
@@ -2196,6 +2248,8 @@ export function toDXF(
 
   if (includeNearbyText) {
     placedNearbyAnnotations.forEach((item) => {
+      if (item.kind === "pedestrian-road") return; // προσωρινό: χωρίς πεζόδρομους
+      if (item.kind === "public-use") return; // χωρίς designation Κ.Π.
       addCenteredDxfText(writer, item.point.x, item.point.y, item.height, item.label, {
         rotation: item.kind === "pedestrian-road" ? item.rotationDegrees : undefined,
         layerName: "ANNOTATION",
@@ -2381,18 +2435,47 @@ export function toDXF(
     return true;
   };
 
+  const drawFallbackOtLabel = (text: string, ring: Point[]) => {
+    const centerWorld = findBestOtLabelPoint(ring, []) || centroidOfRing(ring);
+    const base = toSheet(centerWorld);
+    const candidates = [
+      base,
+      { x: base.x, y: base.y + mm(2.4) },
+      { x: base.x, y: base.y - mm(2.4) },
+      { x: base.x + mm(3), y: base.y },
+      { x: base.x - mm(3), y: base.y },
+    ];
+
+    const textHeight = mm(1.5);
+    const halfW = (estimateTextWidth(text, textHeight) + mm(2.4)) / 2;
+    const halfH = (textHeight + mm(1.8)) / 2;
+
+    const placed = candidates.find((p) => {
+      const rect = { minX: p.x - halfW, maxX: p.x + halfW, minY: p.y - halfH, maxY: p.y + halfH };
+      if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return false;
+      if (rectsOverlap(rect, legendMaskRect)) return false;
+      return true;
+    });
+
+    const p = placed || base;
+    addMaskedSheetLine({ x: p.x - halfW, y: p.y - halfH }, { x: p.x + halfW, y: p.y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addMaskedSheetLine({ x: p.x + halfW, y: p.y - halfH }, { x: p.x + halfW, y: p.y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addMaskedSheetLine({ x: p.x + halfW, y: p.y + halfH }, { x: p.x - halfW, y: p.y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addMaskedSheetLine({ x: p.x - halfW, y: p.y + halfH }, { x: p.x - halfW, y: p.y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
+    addCenteredDxfText(writer, p.x, p.y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
+  };
+
   const otLabelAvoidRings = rotatedParcels.flatMap((parcel) => parcel.rings);
   rotatedContextOts.forEach((ot) => {
-    if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0], otLabelAvoidRings);
+    if (!ot.otNumber || !ot.rings[0]?.length) return;
+    const text = `Ο.Τ. ${ot.otNumber}`;
+    const drawn = drawOtBoxLabel(text, ot.rings[0], otLabelAvoidRings);
+    if (!drawn) drawFallbackOtLabel(text, ot.rings[0]);
   });
   if (meta?.ot && rotatedOtRings[0]?.length) {
-    const drawnMainOt = drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, rotatedOtRings[0], otLabelAvoidRings);
-    if (!drawnMainOt) {
-      const fallback = toSheet(findBestOtLabelPoint(rotatedOtRings[0], []) || centroidOfRing(rotatedOtRings[0]));
-      if (!pointInRect(fallback, legendMaskRect)) {
-        addCenteredDxfText(writer, fallback.x, fallback.y, mm(1.5), `Ο.Τ. ${meta.ot}`, { layerName: "OT_LABELS", colorNumber: 7 });
-      }
-    }
+    const text = `Ο.Τ. ${meta.ot}`;
+    const drawnMainOt = drawOtBoxLabel(text, rotatedOtRings[0], otLabelAvoidRings);
+    if (!drawnMainOt) drawFallbackOtLabel(text, rotatedOtRings[0]);
   }
 
   const northX = drawWin.x0 + mm(16);
