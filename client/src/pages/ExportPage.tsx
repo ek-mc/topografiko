@@ -201,7 +201,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showLegend, setShowLegend] = useState(true);
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
-  const [showNearbyLabels, setShowNearbyLabels] = useState(false);
+  const [showNearbyLabels, setShowNearbyLabels] = useState(true);
   const [hatchPedestrianRoads, setHatchPedestrianRoads] = useState(true);
   const [hatchGreenAreas, setHatchGreenAreas] = useState(true);
   const [activeDeclarations, setActiveDeclarations] = useState<Record<string, boolean>>(() => (

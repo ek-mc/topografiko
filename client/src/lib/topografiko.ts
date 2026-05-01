@@ -711,7 +711,7 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
         if (Math.abs(distancePriority) > 1e-9) return distancePriority;
         return a.label.localeCompare(b.label, "el");
       })
-      .slice(0, 8);
+      .slice(0, 20);
   } catch (error) {
     console.warn("Nearby planning annotation lookup failed; continuing without nearby labels.", error);
     return [];
@@ -905,7 +905,7 @@ export async function fetchContextOTs(otRings: Point[][], currentOt?: string): P
     return { x, y };
   });
   const bounds = boundsFromPoints(projectedPoints);
-  const padding = Math.max(30, Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * 0.9);
+  const padding = Math.max(80, Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * 2.2);
   const features = await fetchTEELayerFeaturesByEnvelope(
     6,
     ["OBJECTID", "FEK", "OT_NUM", "APOF_EIDOS", "KALL_DHM_NAME"],
@@ -916,7 +916,7 @@ export async function fetchContextOTs(otRings: Point[][], currentOt?: string): P
       maxY: bounds.maxY + padding,
     },
     true,
-    80,
+    300,
   );
   const currentCentroid = centroidOfRing(stripClosingPoint(otRings[0] || points));
   const seen = new Map<string, TEEData>();
@@ -1982,6 +1982,17 @@ export function toDXF(
     });
   });
 
+  const fittedLabelHeightForRing = (ring: Point[], text: string, maxHeight: number, minHeight: number) => {
+    const pts = stripClosingPoint(ring);
+    if (!pts.length) return minHeight;
+    const b = boundsFromPoints(pts.map(toSheet));
+    const w = Math.max(b.maxX - b.minX, mm(8));
+    const h = Math.max(b.maxY - b.minY, mm(4));
+    const byWidth = (w * 0.72) / Math.max(text.length, 4);
+    const byHeight = h * 0.33;
+    return Math.max(minHeight, Math.min(maxHeight, byWidth, byHeight));
+  };
+
   rotatedParcels.slice(1).forEach((parcel) => {
     const pts = stripClosingPoint(parcel.rings[0]);
     if (pts.length < 2) return;
@@ -1997,7 +2008,8 @@ export function toDXF(
     });
     const labelPoint = toSheet(centroidOfRing(parcel.rings[0] || []));
     if (labelPoint.x >= drawWin.x0 && labelPoint.x <= drawWin.x1 && labelPoint.y >= drawWin.y0 && labelPoint.y <= drawWin.y1 && !pointInRect(labelPoint, legendMaskRect)) {
-      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), mm(1.2), parcel.kaek, {
+      const labelHeight = fittedLabelHeightForRing(parcel.rings[0] || [], parcel.kaek, mm(1.2), mm(0.8));
+      addCenteredDxfText(writer, labelPoint.x, labelPoint.y - mm(0.7), labelHeight, parcel.kaek, {
         layerName: "ANNOTATION",
         colorNumber: 8,
       });
@@ -2010,7 +2022,8 @@ export function toDXF(
     addMaskedSheetLine(start, end, { layerName: "PARCEL_MAIN", colorNumber: 7 });
   });
   const mainLabelPoint = toSheet(centroidOfRing(mainParcel.rings[0]));
-  addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mm(1.8), mainParcel.kaek, { layerName: "ANNOTATION" });
+  const mainLabelHeight = fittedLabelHeightForRing(mainParcel.rings[0], mainParcel.kaek, mm(1.8), mm(1.0));
+  addCenteredDxfText(writer, mainLabelPoint.x, mainLabelPoint.y, mainLabelHeight, mainParcel.kaek, { layerName: "ANNOTATION" });
 
   const otBlockedRects = [
     ...rotatedContextOts.flatMap((ot) => ot.rings.slice(0, 1)),
@@ -2222,7 +2235,7 @@ export function toDXF(
 
   const drawOtBoxLabel = (text: string, sourceRing: Point[], avoidWorldRings: Point[][] = []) => {
     const ringWorld = stripClosingPoint(sourceRing);
-    if (!ringWorld.length) return;
+    if (!ringWorld.length) return false;
 
     const textHeight = mm(1.55);
     const padX = mm(1.2);
@@ -2297,7 +2310,7 @@ export function toDXF(
       }
     });
 
-    if (!Number.isFinite(bestScore) || bestScore === Number.NEGATIVE_INFINITY) return;
+    if (!Number.isFinite(bestScore) || bestScore === Number.NEGATIVE_INFINITY) return false;
 
     const bestSheet = toSheet(bestWorld);
     const x = bestSheet.x;
@@ -2308,14 +2321,15 @@ export function toDXF(
       minY: y - halfH,
       maxY: y + halfH,
     };
-    if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return;
-    if (!(rect.maxX < legendMaskRect.minX || rect.minX > legendMaskRect.maxX || rect.maxY < legendMaskRect.minY || rect.minY > legendMaskRect.maxY)) return;
+    if (rect.minX < drawWin.x0 || rect.maxX > drawWin.x1 || rect.minY < drawWin.y0 || rect.maxY > drawWin.y1) return false;
+    if (!(rect.maxX < legendMaskRect.minX || rect.minX > legendMaskRect.maxX || rect.maxY < legendMaskRect.minY || rect.minY > legendMaskRect.maxY)) return false;
 
     addMaskedSheetLine({ x: x - halfW, y: y - halfH }, { x: x + halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
     addMaskedSheetLine({ x: x + halfW, y: y - halfH }, { x: x + halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
     addMaskedSheetLine({ x: x + halfW, y: y + halfH }, { x: x - halfW, y: y + halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
     addMaskedSheetLine({ x: x - halfW, y: y + halfH }, { x: x - halfW, y: y - halfH }, { layerName: "OT_LABELS", colorNumber: 7 });
     addCenteredDxfText(writer, x, y - textHeight * 0.36, textHeight, text, { layerName: "OT_LABELS", colorNumber: 7 });
+    return true;
   };
 
   const otLabelAvoidRings = rotatedParcels.flatMap((parcel) => parcel.rings);
@@ -2323,7 +2337,13 @@ export function toDXF(
     if (ot.otNumber && ot.rings[0]?.length) drawOtBoxLabel(`Ο.Τ. ${ot.otNumber}`, ot.rings[0], otLabelAvoidRings);
   });
   if (meta?.ot && rotatedOtRings[0]?.length) {
-    drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, rotatedOtRings[0], otLabelAvoidRings);
+    const drawnMainOt = drawOtBoxLabel(`Ο.Τ. ${meta.ot}`, rotatedOtRings[0], otLabelAvoidRings);
+    if (!drawnMainOt) {
+      const fallback = toSheet(findBestOtLabelPoint(rotatedOtRings[0], []) || centroidOfRing(rotatedOtRings[0]));
+      if (!pointInRect(fallback, legendMaskRect)) {
+        addCenteredDxfText(writer, fallback.x, fallback.y, mm(1.5), `Ο.Τ. ${meta.ot}`, { layerName: "OT_LABELS", colorNumber: 7 });
+      }
+    }
   }
 
   const northX = drawWin.x0 + mm(16);
