@@ -616,7 +616,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
 
   };
 
-  const fullDxfLabel = "DXF (real m)";
+  const fullDxfLabel = "DXF";
 
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground transition-colors">
@@ -804,7 +804,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors lg:p-5">
+            <div className="hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors lg:p-5">
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="hidden space-y-4">
                   <div className="relative overflow-hidden rounded-xl border border-border bg-muted/40 shadow-inner transition-colors">
