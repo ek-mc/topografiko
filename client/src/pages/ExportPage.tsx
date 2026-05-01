@@ -205,7 +205,7 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [hatchPedestrianRoads, setHatchPedestrianRoads] = useState(true);
   const [hatchGreenAreas, setHatchGreenAreas] = useState(true);
   const [activeDeclarations, setActiveDeclarations] = useState<Record<string, boolean>>(() => (
-    Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
+    Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, true])) as Record<string, boolean>
   ));
   const [paperSize, setPaperSize] = useState<"A4" | "A3" | "A2" | "A1" | "A0">("A1");
   const [scaleDenominator, setScaleDenominator] = useState<50 | 100 | 200 | 500 | 1000>(200);
