@@ -630,8 +630,31 @@ export async function fetchNearbyPlanningAnnotations(ringsGgrs87: Point[][]): Pr
         .map((ring) => ring.map((point) => ({ x: Number(point[0]), y: Number(point[1]) })))
         .map((ring) => stripClosingPoint(ring))
         .filter((ring) => ring.length >= 3);
-      const roadFootprint = ringGeometries[0];
       const linearPlacement = selectLinearAnnotationPlacement(paths, expandedBounds, parcelCenter);
+      const roadFootprint = ringGeometries[0] || (() => {
+        if (!linearPlacement) return undefined;
+        const candidatePath = paths
+          .map((path) => stripClosingPoint(path))
+          .filter((path) => path.length >= 2)
+          .sort((a, b) => {
+            const len = (pts: Point[]) => pts.slice(0, -1).reduce((sum, p, i) => sum + segmentLength(p, pts[i + 1]), 0);
+            return len(b) - len(a);
+          })[0];
+        if (!candidatePath?.length) return undefined;
+
+        const angle = ((linearPlacement.rotationDegrees || 0) * Math.PI) / 180;
+        const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
+        const halfWidth = 2.5; // approx pedestrian width in meters for hatch support
+
+        const start = candidatePath[0];
+        const end = candidatePath[candidatePath.length - 1];
+        return [
+          { x: start.x + normal.x * halfWidth, y: start.y + normal.y * halfWidth },
+          { x: end.x + normal.x * halfWidth, y: end.y + normal.y * halfWidth },
+          { x: end.x - normal.x * halfWidth, y: end.y - normal.y * halfWidth },
+          { x: start.x - normal.x * halfWidth, y: start.y - normal.y * halfWidth },
+        ];
+      })();
       let center = linearPlacement?.point || selectNearbyAnnotationPoint(points, expandedBounds, parcelCenter);
       if (center && linearPlacement && roadFootprint?.length) {
         center = moveLinearPlacementInsideRing(center, linearPlacement.rotationDegrees, roadFootprint, parcelCenter);
@@ -1541,17 +1564,19 @@ function drawPolygonHatch(
 
     if (intersections.length < 2) continue;
     intersections.sort((a, b) => a - b);
+    const uniqueIntersections = intersections.filter((value, index, array) => (
+      index === 0 || Math.abs(value - array[index - 1]) > epsilon
+    ));
 
-    for (let i = 0; i < intersections.length - 1; i += 1) {
-      const t0 = intersections[i];
-      const t1 = intersections[i + 1];
+    for (let i = 0; i + 1 < uniqueIntersections.length; i += 2) {
+      const t0 = uniqueIntersections[i];
+      const t1 = uniqueIntersections[i + 1];
       if (t1 - t0 < epsilon) continue;
-      const midT = (t0 + t1) / 2;
-      const mid = { x: dir.x * midT + normal.x * n, y: dir.y * midT + normal.y * n };
-      if (!pointInRing(mid, ring)) continue;
 
       const clampedT0 = Math.max(t0, minT);
       const clampedT1 = Math.min(t1, maxT);
+      if (clampedT1 - clampedT0 < epsilon) continue;
+
       const start = { x: dir.x * clampedT0 + normal.x * n, y: dir.y * clampedT0 + normal.y * n };
       const end = { x: dir.x * clampedT1 + normal.x * n, y: dir.y * clampedT1 + normal.y * n };
 
@@ -1559,7 +1584,6 @@ function drawPolygonHatch(
         layerName: options.layerName,
         colorNumber: options.colorNumber,
       });
-      i += 1;
     }
   }
 }
@@ -1605,6 +1629,7 @@ export function toDXF(
     buildingTerms?: BuildingTermsData | null;
     declarations?: Array<{ title: string; text: string; signerLabel?: string }>;
     nearbyAnnotations?: NearbyPlanningAnnotation[];
+    includeNearbyText?: boolean;
     urbanLines?: Point[][];
     buildingLines?: Point[][];
     vertexElevations?: { label: string; z: number }[];
@@ -1702,6 +1727,7 @@ export function toDXF(
   const includeTitleBlock = Boolean(meta?.includeTitleBlock);
   const hatchPedestrianRoads = meta?.hatchPedestrianRoads ?? true;
   const hatchGreenAreas = meta?.hatchGreenAreas ?? true;
+  const includeNearbyText = meta?.includeNearbyText ?? false;
   const isRealSizeMeters = exportMode === "full" && exportUnits === "meters";
   const outputUnitFactor = isRealSizeMeters ? scaleDenominator / 1000 : 1;
   const paperConfig = paperSize === "A0"
@@ -2091,13 +2117,15 @@ export function toDXF(
     return [];
   });
 
-  placedNearbyAnnotations.forEach((item) => {
-    addCenteredDxfText(writer, item.point.x, item.point.y, item.height, item.label, {
-      rotation: item.kind === "pedestrian-road" ? item.rotationDegrees : undefined,
-      layerName: "ANNOTATION",
-      colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
+  if (includeNearbyText) {
+    placedNearbyAnnotations.forEach((item) => {
+      addCenteredDxfText(writer, item.point.x, item.point.y, item.height, item.label, {
+        rotation: item.kind === "pedestrian-road" ? item.rotationDegrees : undefined,
+        layerName: "ANNOTATION",
+        colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
+      });
     });
-  });
+  }
 
   const parcelSheetPoints = mainParcelPoints.map(toSheet);
   const parcelCenter = centroidOfRing(parcelSheetPoints);
