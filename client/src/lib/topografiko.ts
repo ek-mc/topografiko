@@ -1526,7 +1526,14 @@ function buildParcelEdgeLabels(points: Point[]) {
 function drawPolygonHatch(
   writer: DxfWriter,
   polygon: Point[],
-  options: { spacing: number; angleDegrees: number; layerName: string; colorNumber?: number },
+  options: {
+    spacing: number;
+    angleDegrees: number;
+    layerName: string;
+    colorNumber?: number;
+    clipRect?: { minX: number; minY: number; maxX: number; maxY: number };
+    maskRect?: { minX: number; minY: number; maxX: number; maxY: number };
+  },
 ) {
   const ring = stripClosingPoint(polygon);
   if (ring.length < 3) return;
@@ -1580,9 +1587,17 @@ function drawPolygonHatch(
       const start = { x: dir.x * clampedT0 + normal.x * n, y: dir.y * clampedT0 + normal.y * n };
       const end = { x: dir.x * clampedT1 + normal.x * n, y: dir.y * clampedT1 + normal.y * n };
 
-      addDxfLine(writer, start, end, {
-        layerName: options.layerName,
-        colorNumber: options.colorNumber,
+      const clipped = options.clipRect ? clipSegmentToRect(start, end, options.clipRect) : { start, end };
+      if (!clipped) continue;
+      const visibleSegments = options.maskRect
+        ? splitSegmentOutsideRect(clipped.start, clipped.end, options.maskRect)
+        : [{ start: clipped.start, end: clipped.end }];
+
+      visibleSegments.forEach((segment) => {
+        addDxfLine(writer, segment.start, segment.end, {
+          layerName: options.layerName,
+          colorNumber: options.colorNumber,
+        });
       });
     }
   }
@@ -2044,6 +2059,8 @@ export function toDXF(
       angleDegrees: item.kind === "pedestrian-road" ? 35 : 55,
       layerName: item.kind === "pedestrian-road" ? "HATCH_PED" : "HATCH_GREEN",
       colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
+      clipRect,
+      maskRect: legendMaskRect,
     });
   });
 
