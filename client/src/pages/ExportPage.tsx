@@ -202,6 +202,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
   const [showTitleBlock, setShowTitleBlock] = useState(true);
   const [showTerms, setShowTerms] = useState(true);
   const [showNearbyLabels, setShowNearbyLabels] = useState(false);
+  const [hatchPedestrianRoads, setHatchPedestrianRoads] = useState(true);
+  const [hatchGreenAreas, setHatchGreenAreas] = useState(true);
   const [activeDeclarations, setActiveDeclarations] = useState<Record<string, boolean>>(() => (
     Object.fromEntries(DEFAULT_DECLARATION_TEMPLATES.map((item) => [item.key, false])) as Record<string, boolean>
   ));
@@ -595,6 +597,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
           includeTitleBlock: showTitleBlock,
           coords: showCoords ? coords : undefined,
           nearbyAnnotations: showNearbyLabels ? nearbyAnnotations : [],
+          hatchPedestrianRoads,
+          hatchGreenAreas,
           paperSize,
           scaleDenominator,
           parcelHorizontalAlignment,
@@ -672,6 +676,8 @@ export default function ExportPage({ initialKaek }: ExportPageProps) {
                       { state: showTitleBlock, setter: setShowTitleBlock, label: "Title block" },
                       { state: showTerms, setter: setShowTerms, label: "Όροι / Notes" },
                       { state: showNearbyLabels, setter: setShowNearbyLabels, label: "Κ.Π. / ΠΕΖΟΔΡΟΜΟΣ" },
+                      { state: hatchPedestrianRoads, setter: setHatchPedestrianRoads, label: "Hatch πεζόδρομος" },
+                      { state: hatchGreenAreas, setter: setHatchGreenAreas, label: "Hatch πράσινο" },
                     ].map(({ state, setter, label }) => (
                       <button
                         key={label}

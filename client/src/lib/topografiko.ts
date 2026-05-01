@@ -1500,6 +1500,70 @@ function buildParcelEdgeLabels(points: Point[]) {
   });
 }
 
+function drawPolygonHatch(
+  writer: DxfWriter,
+  polygon: Point[],
+  options: { spacing: number; angleDegrees: number; layerName: string; colorNumber?: number },
+) {
+  const ring = stripClosingPoint(polygon);
+  if (ring.length < 3) return;
+
+  const spacing = Math.max(options.spacing, 0.2);
+  const angle = (options.angleDegrees * Math.PI) / 180;
+  const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+  const normal = { x: -dir.y, y: dir.x };
+
+  const dot = (p: Point, v: Point) => p.x * v.x + p.y * v.y;
+  const normalValues = ring.map((p) => dot(p, normal));
+  const tangentValues = ring.map((p) => dot(p, dir));
+  const minN = Math.min(...normalValues) - spacing;
+  const maxN = Math.max(...normalValues) + spacing;
+  const minT = Math.min(...tangentValues) - spacing * 2;
+  const maxT = Math.max(...tangentValues) + spacing * 2;
+
+  const epsilon = 1e-7;
+  for (let n = minN; n <= maxN; n += spacing) {
+    const intersections: number[] = [];
+    for (let i = 0; i < ring.length; i += 1) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const da = dot(a, normal) - n;
+      const db = dot(b, normal) - n;
+
+      if (Math.abs(da) < epsilon && Math.abs(db) < epsilon) continue;
+      if (da * db > 0) continue;
+
+      const tEdge = da / (da - db);
+      const x = a.x + (b.x - a.x) * tEdge;
+      const y = a.y + (b.y - a.y) * tEdge;
+      intersections.push(dot({ x, y }, dir));
+    }
+
+    if (intersections.length < 2) continue;
+    intersections.sort((a, b) => a - b);
+
+    for (let i = 0; i < intersections.length - 1; i += 1) {
+      const t0 = intersections[i];
+      const t1 = intersections[i + 1];
+      if (t1 - t0 < epsilon) continue;
+      const midT = (t0 + t1) / 2;
+      const mid = { x: dir.x * midT + normal.x * n, y: dir.y * midT + normal.y * n };
+      if (!pointInRing(mid, ring)) continue;
+
+      const clampedT0 = Math.max(t0, minT);
+      const clampedT1 = Math.min(t1, maxT);
+      const start = { x: dir.x * clampedT0 + normal.x * n, y: dir.y * clampedT0 + normal.y * n };
+      const end = { x: dir.x * clampedT1 + normal.x * n, y: dir.y * clampedT1 + normal.y * n };
+
+      addDxfLine(writer, start, end, {
+        layerName: options.layerName,
+        colorNumber: options.colorNumber,
+      });
+      i += 1;
+    }
+  }
+}
+
 export function toGeoJSON(name: string, parcels: { kaek: string; rings: Point[][] }[]) {
   return JSON.stringify({
     type: "FeatureCollection",
@@ -1545,6 +1609,8 @@ export function toDXF(
     buildingLines?: Point[][];
     vertexElevations?: { label: string; z: number }[];
     parcelHorizontalAlignment?: ParcelHorizontalAlignment;
+    hatchPedestrianRoads?: boolean;
+    hatchGreenAreas?: boolean;
   },
 ) {
   const exportMode = meta?.exportMode || "full";
@@ -1563,6 +1629,8 @@ export function toDXF(
   writer.addLayer("OT_POINTS", 7, "CONTINUOUS");
   writer.addLayer("PARCEL_LABELS", 7, "CONTINUOUS");
   writer.addLayer("OT_LABELS", 7, "CONTINUOUS");
+  writer.addLayer("HATCH_PED", 2, "CONTINUOUS");
+  writer.addLayer("HATCH_GREEN", 3, "CONTINUOUS");
 
   const greekStyle = writer.tables.addStyle(DXF_TEXT_STYLE);
   greekStyle.fontFileName = "arial.ttf";
@@ -1632,6 +1700,8 @@ export function toDXF(
   const paperSize = meta?.paperSize || "A3";
   const scaleDenominator = meta?.scaleDenominator || 200;
   const includeTitleBlock = Boolean(meta?.includeTitleBlock);
+  const hatchPedestrianRoads = meta?.hatchPedestrianRoads ?? true;
+  const hatchGreenAreas = meta?.hatchGreenAreas ?? true;
   const isRealSizeMeters = exportMode === "full" && exportUnits === "meters";
   const outputUnitFactor = isRealSizeMeters ? scaleDenominator / 1000 : 1;
   const paperConfig = paperSize === "A0"
@@ -1933,6 +2003,24 @@ export function toDXF(
       maxY: footprint[0].y,
     });
   };
+  const hatchableFootprints = rawSheetNearbyAnnotations
+    .filter((item) => item.footprint?.length)
+    .filter((item) => {
+      if (item.kind === "pedestrian-road") return hatchPedestrianRoads;
+      return hatchGreenAreas;
+    });
+
+  hatchableFootprints.forEach((item) => {
+    const ring = stripClosingPoint(item.footprint || []);
+    if (ring.length < 3) return;
+    drawPolygonHatch(writer, ring, {
+      spacing: item.kind === "pedestrian-road" ? mm(1.4) : mm(1.8),
+      angleDegrees: item.kind === "pedestrian-road" ? 35 : 55,
+      layerName: item.kind === "pedestrian-road" ? "HATCH_PED" : "HATCH_GREEN",
+      colorNumber: item.kind === "pedestrian-road" ? 2 : 3,
+    });
+  });
+
   const nearbyPlacementQueue = [...rawSheetNearbyAnnotations].sort((a, b) => {
     if (a.kind === b.kind) return 0;
     return a.kind === "public-use" ? -1 : 1;
