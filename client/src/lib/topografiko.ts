@@ -2143,10 +2143,11 @@ export function toDXF(
     })
     .filter((item, index, all) => {
       if (item.kind !== "public-use" || !item.footprint?.length) return true;
+      const footprint = item.footprint;
       return !all.some((other, otherIndex) => {
         if (otherIndex === index) return false;
         if (other.kind !== "pedestrian-road" || !other.footprint?.length) return false;
-        return polygonsStronglyOverlap(item.footprint, other.footprint);
+        return polygonsStronglyOverlap(footprint, other.footprint);
       });
     });
 

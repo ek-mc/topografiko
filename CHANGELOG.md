@@ -1,5 +1,16 @@
 # Changelog
 
+
+## [0.1.4] - 2026-11-01
+
+### Fixed
+- Refresh compatible dependencies and the committed pnpm lockfile.
+- Run reproducible pnpm installs and project checks in CI on Node.js 24.
+- Preserve footprint narrowing inside overlap callbacks; remove an unreachable preview sidebar.
+
+### Upgrade Notes
+None.
+
 ## 0.1.3 - 2026-04-09
 
 - Dependency cleanup: removed unused packages from runtime deps and removed leftover `@types/google.maps` dev dependency.
