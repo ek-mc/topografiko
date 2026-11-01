@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.1.4] - 2026-11-01
+## [0.1.5] - 2026-11-01
 
 ### Fixed
 - Refresh compatible dependencies and the committed pnpm lockfile.
