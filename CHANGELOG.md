@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.6] - 2026-11-11
+
+### Changed
+- Clean up legacy integration artifacts and development configuration.
+
+### Upgrade Notes
+- None.
+
+
 
 ## [0.1.5] - 2026-11-01
 
