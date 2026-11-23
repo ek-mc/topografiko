@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7] - 2026-11-23
+
+### Changed
+- Remove unused Vitest tooling and its vulnerable development-only dependency graph; no application imports or test suites depend on it.
+
+### Upgrade Notes
+- Development tooling only; no runtime data or database migrations.
+
 ## [0.1.6] - 2026-11-11
 
 ### Changed
