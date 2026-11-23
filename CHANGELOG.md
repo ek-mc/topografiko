@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.9] - 2026-11-23
+
+### Changed
+- Remove unregistered, unused typography tooling and its vulnerable build-time selector-parser dependency.
+
+### Upgrade Notes
+- No application dependency upgrades, database connections or migrations.
+
 ## [0.1.8] - 2026-11-23
 
 ### Fixed
