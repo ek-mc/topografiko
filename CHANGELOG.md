@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.8] - 2026-11-23
+
+### Fixed
+- Separate Pages build/deploy jobs, use unique build-attempt artifact identities and verify the exact artifact before publication.
+- Expose deployed version/source metadata; validate pull requests without publishing.
+
 ## [0.1.7] - 2026-11-23
 
 ### Changed

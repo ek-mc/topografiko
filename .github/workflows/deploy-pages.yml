@@ -3,51 +3,80 @@ name: Deploy topografiko to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm check
+      - name: Build app
+        run: pnpm build
+      - name: Identify this build
+        id: identity
+        run: |
+          echo "artifact_name=github-pages-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          node --input-type=module -e 'import fs from "node:fs"; const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); fs.writeFileSync("dist/public/version.json", JSON.stringify({version:pkg.version,commit:process.env.GITHUB_SHA}));'
+      - name: Upload Pages artifact
+        id: upload
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: ${{ steps.identity.outputs.artifact_name }}
+          path: dist/public
+
   deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Build app
-        run: pnpm build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist/public
-
+      - name: Wait for this exact uploaded artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_NAME: ${{ needs.build.outputs.artifact_name }}
+          EXPECTED_ID: ${{ needs.build.outputs.artifact_id }}
+        shell: bash
+        run: |
+          for attempt in {1..12}; do
+            if gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" > "$RUNNER_TEMP/pages-artifacts.json"; then
+              if jq -es --arg name "$EXPECTED_NAME" --arg id "$EXPECTED_ID" '[.[].artifacts[] | select(.name == $name and (.expired | not))] | length == 1 and (.[0].id | tostring) == $id' "$RUNNER_TEMP/pages-artifacts.json" > /dev/null; then
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo 'Uploaded artifact did not become uniquely visible within 60 seconds.' >&2
+          exit 1
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact_name }}
